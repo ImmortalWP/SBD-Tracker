@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-gym-950 text-gym-50 font-sans antialiased;
+    min-height: 100vh;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-gym-950;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gym-700 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gym-600;
+  }
+}
+
+@layer components {
+  /* Card base */
+  .card {
+    @apply bg-gym-850 border border-gym-800 rounded-xl shadow-card 
+           transition-all duration-300 ease-out;
+  }
+  .card:hover {
+    @apply shadow-card-hover border-gym-700 -translate-y-0.5;
+  }
+
+  /* Notebook-style ruled lines */
+  .notebook-lines {
+    background-image: repeating-linear-gradient(
+      transparent,
+      transparent 31px,
+      rgba(63, 63, 70, 0.3) 31px,
+      rgba(63, 63, 70, 0.3) 32px
+    );
+    background-size: 100% 32px;
+  }
+
+  /* Glow badge */
+  .badge-block {
+    @apply inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider
+           bg-accent-red/15 text-accent-red border border-accent-red/20;
+  }
+
+  .badge-day {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold
+           bg-accent-amber/15 text-accent-amber border border-accent-amber/20;
+  }
+
+  .badge-main {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+           bg-accent-blue/15 text-accent-blue;
+  }
+
+  .badge-secondary {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+           bg-purple-500/15 text-purple-400;
+  }
+
+  .badge-accessory {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+           bg-gym-700/50 text-gym-400;
+  }
+
+  /* Input base */
+  .input-base {
+    @apply w-full px-3 py-2.5 rounded-lg text-sm
+           bg-gym-900 border border-gym-700 text-gym-50
+           placeholder-gym-500 
+           focus:outline-none focus:ring-2 focus:ring-accent-red/40 focus:border-accent-red/50
+           transition-all duration-200;
+  }
+
+  /* Button styles */
+  .btn-primary {
+    @apply px-4 py-2.5 rounded-lg text-sm font-semibold
+           bg-accent-red text-white
+           hover:bg-accent-redGlow
+           focus:outline-none focus:ring-2 focus:ring-accent-red/40
+           active:scale-[0.98]
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2.5 rounded-lg text-sm font-semibold
+           bg-gym-800 text-gym-300 border border-gym-700
+           hover:bg-gym-700 hover:text-gym-50
+           focus:outline-none focus:ring-2 focus:ring-gym-600
+           active:scale-[0.98]
+           transition-all duration-200;
+  }
+
+  .btn-ghost {
+    @apply px-3 py-2 rounded-lg text-sm font-medium
+           text-gym-400
+           hover:bg-gym-800 hover:text-gym-200
+           focus:outline-none
+           active:scale-[0.98]
+           transition-all duration-200;
+  }
+
+  .btn-danger {
+    @apply px-3 py-2 rounded-lg text-sm font-medium
+           text-red-400
+           hover:bg-red-500/10 hover:text-red-300
+           focus:outline-none
+           transition-all duration-200;
+  }
+
+  /* Set row — diary style */
+  .set-row {
+    @apply font-mono text-sm text-gym-300 tracking-wide;
+  }
+}
