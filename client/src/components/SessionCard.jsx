@@ -55,6 +55,11 @@ export default function SessionCard({ session, onDelete }) {
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="badge-block">Block {session.block}</span>
+          {session.percentage && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold font-mono bg-accent-green/15 text-accent-green border border-accent-green/20">
+              {session.percentage}%
+            </span>
+          )}
           <span className="badge-day">{session.day}</span>
           {formattedDate && (
             <span className="text-xs text-gym-500">{formattedDate}</span>

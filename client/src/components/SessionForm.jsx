@@ -23,6 +23,7 @@ export default function SessionForm({ existingSession }) {
   const isEditing = Boolean(existingSession);
 
   const [block, setBlock] = useState('');
+  const [percentage, setPercentage] = useState('');
   const [day, setDay] = useState('Sunday');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [exercises, setExercises] = useState([emptyExercise('main')]);
@@ -68,6 +69,7 @@ export default function SessionForm({ existingSession }) {
   useEffect(() => {
     if (existingSession) {
       setBlock(existingSession.block.toString());
+      setPercentage(existingSession.percentage ? existingSession.percentage.toString() : '');
       setDay(existingSession.day);
       setDate(
         existingSession.date
@@ -140,6 +142,7 @@ export default function SessionForm({ existingSession }) {
     // Build payload
     const payload = {
       block: Number(block),
+      percentage: percentage ? Number(percentage) : undefined,
       day,
       date: date || undefined,
       startTime: startTime || undefined,
@@ -215,8 +218,8 @@ export default function SessionForm({ existingSession }) {
         </div>
       </div>
 
-      {/* Block / Day / Date row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Block / Percentage / Day / Date row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wider text-gym-400 mb-1.5">
             Block #
@@ -230,6 +233,22 @@ export default function SessionForm({ existingSession }) {
             id="input-block"
             min="1"
             required
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-gym-400 mb-1.5">
+            Intensity %
+          </label>
+          <input
+            type="number"
+            value={percentage}
+            onChange={(e) => setPercentage(e.target.value)}
+            placeholder="75"
+            className="input-base"
+            id="input-percentage"
+            min="0"
+            max="100"
+            step="1"
           />
         </div>
         <div>
