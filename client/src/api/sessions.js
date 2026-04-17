@@ -28,4 +28,7 @@ export const deleteSession = (id) => API.delete(`/sessions/${id}`);
 export const getPRs = () => API.get('/sessions/stats/prs');
 export const getAnalytics = () => API.get('/sessions/stats/analytics');
 
+// Leaderboard
+export const getLeaderboard = () => API.get('/leaderboard');
+
 export default API;

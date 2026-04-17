@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { GiWeightLiftingUp } from 'react-icons/gi';
 import { HiHome, HiClipboardList, HiPlusCircle, HiChartBar, HiLogout } from 'react-icons/hi';
+import { HiTrophy } from 'react-icons/hi2';
 import { useAuth } from '../context/AuthContext';
 
 const navLinks = [
@@ -8,6 +9,7 @@ const navLinks = [
   { to: '/sessions', label: 'Sessions', icon: HiClipboardList },
   { to: '/add', label: 'Log Session', icon: HiPlusCircle },
   { to: '/analytics', label: 'Analytics', icon: HiChartBar },
+  { to: '/leaderboard', label: 'Leaderboard', icon: HiTrophy },
 ];
 
 export default function Navbar() {

@@ -6,6 +6,7 @@ import Sessions from './pages/Sessions';
 import AddSession from './pages/AddSession';
 import EditSession from './pages/EditSession';
 import Analytics from './pages/Analytics';
+import Leaderboard from './pages/Leaderboard';
 import Login from './pages/Login';
 
 function ProtectedRoute({ children }) {
@@ -44,6 +45,7 @@ function AppRoutes() {
                   <Route path="/add" element={<AddSession />} />
                   <Route path="/edit/:id" element={<EditSession />} />
                   <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/leaderboard" element={<Leaderboard />} />
                 </Routes>
               </main>
             </div>
