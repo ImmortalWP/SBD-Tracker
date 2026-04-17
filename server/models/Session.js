@@ -16,6 +16,7 @@ const SessionSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     block: { type: Number, required: true },
+    week: { type: Number },
     percentage: { type: Number },
     day: { type: String, required: true },
     date: { type: Date, default: Date.now },
