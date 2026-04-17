@@ -17,6 +17,17 @@ const UserSchema = new mongoose.Schema(
       required: true,
       minlength: 6,
     },
+    // Profile
+    bodyWeight: { type: Number },
+    height: { type: Number },
+    weightClass: { type: String },
+    unit: { type: String, enum: ['kg', 'lbs'], default: 'kg' },
+    weightHistory: [
+      {
+        weight: Number,
+        date: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );
