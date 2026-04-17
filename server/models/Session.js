@@ -14,6 +14,7 @@ const ExerciseSchema = new mongoose.Schema({
 
 const SessionSchema = new mongoose.Schema(
   {
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     block: { type: Number, required: true },
     day: { type: String, required: true },
     date: { type: Date, default: Date.now },
@@ -26,6 +27,6 @@ const SessionSchema = new mongoose.Schema(
 );
 
 // Index for efficient queries
-SessionSchema.index({ block: 1, day: 1 });
+SessionSchema.index({ user: 1, block: 1, day: 1 });
 
 module.exports = mongoose.model('Session', SessionSchema);

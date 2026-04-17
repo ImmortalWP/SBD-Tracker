@@ -1,11 +1,16 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const Session = require('../models/Session');
+const auth = require('../middleware/authMiddleware');
+
+// All routes require authentication
+router.use(auth);
 
 // GET /api/sessions — list all, with optional ?block= and ?day= filters
 router.get('/', async (req, res) => {
   try {
-    const filter = {};
+    const filter = { user: req.userId };
     if (req.query.block) filter.block = Number(req.query.block);
     if (req.query.day) filter.day = { $regex: req.query.day, $options: 'i' };
 
@@ -19,7 +24,7 @@ router.get('/', async (req, res) => {
 // GET /api/sessions/:id — single session
 router.get('/:id', async (req, res) => {
   try {
-    const session = await Session.findById(req.params.id);
+    const session = await Session.findOne({ _id: req.params.id, user: req.userId });
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);
   } catch (err) {
@@ -30,7 +35,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/sessions — create
 router.post('/', async (req, res) => {
   try {
-    const session = await Session.create(req.body);
+    const session = await Session.create({ ...req.body, user: req.userId });
     res.status(201).json(session);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -40,10 +45,11 @@ router.post('/', async (req, res) => {
 // PUT /api/sessions/:id — update
 router.put('/:id', async (req, res) => {
   try {
-    const session = await Session.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    const session = await Session.findOneAndUpdate(
+      { _id: req.params.id, user: req.userId },
+      req.body,
+      { new: true, runValidators: true }
+    );
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);
   } catch (err) {
@@ -54,7 +60,7 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/sessions/:id
 router.delete('/:id', async (req, res) => {
   try {
-    const session = await Session.findByIdAndDelete(req.params.id);
+    const session = await Session.findOneAndDelete({ _id: req.params.id, user: req.userId });
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json({ message: 'Session deleted' });
   } catch (err) {
@@ -62,7 +68,7 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// GET /api/stats/prs — personal records for main lifts
+// GET /api/sessions/stats/prs — personal records for main lifts
 router.get('/stats/prs', async (req, res) => {
   try {
     const mainLifts = ['Squat', 'Bench', 'Deadlift'];
@@ -70,6 +76,7 @@ router.get('/stats/prs', async (req, res) => {
 
     for (const lift of mainLifts) {
       const result = await Session.aggregate([
+        { $match: { user: new mongoose.Types.ObjectId(req.userId) } },
         { $unwind: '$exercises' },
         // Exact match instead of regex, so variations don't artificially lower/raise the main PR
         { $match: { 'exercises.name': lift, 'exercises.category': 'main' } },
@@ -85,14 +92,15 @@ router.get('/stats/prs', async (req, res) => {
   }
 });
 
-// GET /api/stats/analytics — summary analytics
+// GET /api/sessions/stats/analytics — summary analytics
 router.get('/stats/analytics', async (req, res) => {
   try {
-    const totalSessions = await Session.countDocuments();
-    const blocks = await Session.distinct('block');
+    const totalSessions = await Session.countDocuments({ user: req.userId });
+    const blocks = await Session.distinct('block', { user: req.userId });
 
     // Sessions per block
     const sessionsPerBlock = await Session.aggregate([
+      { $match: { user: new mongoose.Types.ObjectId(req.userId) } },
       { $group: { _id: '$block', count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]);
@@ -111,6 +119,7 @@ router.get('/stats/analytics', async (req, res) => {
     for (const lift of Object.keys(liftGroups)) {
       const aliases = liftGroups[lift];
       const result = await Session.aggregate([
+        { $match: { user: new mongoose.Types.ObjectId(req.userId) } },
         { $unwind: '$exercises' },
         { $match: { 'exercises.name': { $in: aliases } } },
         { $unwind: '$exercises.sets' },

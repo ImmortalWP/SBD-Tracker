@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { GiWeightLiftingUp } from 'react-icons/gi';
-import { HiHome, HiClipboardList, HiPlusCircle, HiChartBar } from 'react-icons/hi';
+import { HiHome, HiClipboardList, HiPlusCircle, HiChartBar, HiLogout } from 'react-icons/hi';
+import { useAuth } from '../context/AuthContext';
 
 const navLinks = [
   { to: '/', label: 'Dashboard', icon: HiHome },
@@ -10,6 +11,8 @@ const navLinks = [
 ];
 
 export default function Navbar() {
+  const { user, logout } = useAuth();
+
   return (
     <nav className="sticky top-0 z-50 bg-gym-950/80 backdrop-blur-xl border-b border-gym-800/50">
       <div className="max-w-6xl mx-auto px-4">
@@ -47,6 +50,24 @@ export default function Navbar() {
                 <span className="hidden md:inline">{label}</span>
               </NavLink>
             ))}
+
+            {/* User & Logout */}
+            <div className="ml-2 pl-2 border-l border-gym-800/50 flex items-center gap-2">
+              {user && (
+                <span className="hidden sm:inline text-xs font-semibold text-gym-400 bg-gym-800/50 px-2.5 py-1 rounded-md">
+                  {user.username}
+                </span>
+              )}
+              <button
+                onClick={logout}
+                className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-sm font-medium text-gym-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+                title="Logout"
+                id="logout-btn"
+              >
+                <HiLogout className="text-base" />
+                <span className="hidden lg:inline">Logout</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
