@@ -10,6 +10,7 @@ import 'screens/sessions_screen.dart';
 import 'screens/add_session_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/leaderboard_screen.dart';
+import 'screens/profile_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,6 +66,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     SizedBox(), // placeholder for add
     AnalyticsScreen(),
     LeaderboardScreen(),
+    ProfileScreen(),
   ];
 
   @override
@@ -103,6 +105,13 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     }
   }
 
+  // Map bottom nav index to IndexedStack index (skip index 2 = Log button)
+  int _mapIndex(int navIndex) {
+    if (navIndex < 2) return navIndex;    // 0=Dashboard, 1=Sessions
+    if (navIndex == 2) return 0;           // Log opens modal, show Dashboard
+    return navIndex - 1;                   // 3->2=Analytics, 4->3=Leaderboard, 5->4=Profile
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.read<AuthService>();
@@ -136,12 +145,13 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
               ),
             Expanded(
               child: IndexedStack(
-                index: _currentIndex >= 3 ? _currentIndex - 1 : (_currentIndex == 2 ? 0 : _currentIndex),
+                index: _mapIndex(_currentIndex),
                 children: [
                   _screens[0], // Dashboard
                   _screens[1], // Sessions
-                  _screens[3], // Analytics (index 3 in _screens, but 2 in IndexedStack)
-                  _screens[4], // Leaderboard (index 4 in _screens, but 3 in IndexedStack)
+                  _screens[3], // Analytics
+                  _screens[4], // Leaderboard
+                  _screens[5], // Profile
                 ],
               ),
             ),
@@ -175,6 +185,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
             BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline, size: 30), activeIcon: Icon(Icons.add_circle, size: 30), label: 'Log'),
             BottomNavigationBarItem(icon: Icon(Icons.analytics_outlined), activeIcon: Icon(Icons.analytics), label: 'Analytics'),
             BottomNavigationBarItem(icon: Icon(Icons.emoji_events_outlined), activeIcon: Icon(Icons.emoji_events), label: 'Board'),
+            BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Profile'),
           ],
         ),
       ),
@@ -207,11 +218,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                 child: Text(auth.username!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text400)),
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.logout, size: 20, color: AppTheme.text500),
-            onPressed: () => auth.logout(),
-            tooltip: 'Logout',
-          ),
+          const SizedBox(width: 8),
         ],
       ),
     );

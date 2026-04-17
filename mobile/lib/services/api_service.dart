@@ -104,4 +104,21 @@ class ApiService {
     if (res.statusCode == 200) return jsonDecode(res.body);
     throw Exception('Failed to load leaderboard');
   }
+
+  // Profile
+  static Future<Map<String, dynamic>> getProfile() async {
+    final res = await http.get(Uri.parse('$baseUrl/profile'), headers: await _headers());
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    throw Exception('Failed to load profile');
+  }
+
+  static Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
+    final res = await http.put(
+      Uri.parse('$baseUrl/profile'),
+      headers: await _headers(),
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    throw Exception('Failed to update profile');
+  }
 }
