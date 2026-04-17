@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getPRs, getAnalytics } from '../api/sessions';
+import { getPRs, getAnalytics, getCached } from '../api/sessions';
 import StatsPanel from '../components/StatsPanel';
 import { HiTrendingUp, HiCollection, HiCube } from 'react-icons/hi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -10,11 +10,23 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadData();
+    // Show cached data instantly
+    const cachedPrs = getCached('/sessions/stats/prs');
+    const cachedAnalytics = getCached('/sessions/stats/analytics');
+    let hasCached = false;
+    if (cachedPrs) setPrs(cachedPrs);
+    if (cachedAnalytics) {
+      setAnalytics(cachedAnalytics);
+      hasCached = true;
+      setLoading(false);
+    }
+
+    // Fetch fresh in background
+    loadData(hasCached);
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (hasCached) => {
+    if (!hasCached) setLoading(true);
     try {
       const [prRes, anRes] = await Promise.all([getPRs(), getAnalytics()]);
       setPrs(prRes.data);

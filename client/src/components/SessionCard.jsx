@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { HiPencil, HiTrash } from 'react-icons/hi';
-import { deleteSession } from '../api/sessions';
+import { deleteSession, offlineDeleteSession, invalidateSessionCaches } from '../api/sessions';
+import { isOnline } from '../utils/offlineQueue';
 import ExerciseBlock from './ExerciseBlock';
 
 export default function SessionCard({ session, onDelete }) {
@@ -12,7 +13,17 @@ export default function SessionCard({ session, onDelete }) {
 
   const handleDelete = async () => {
     if (window.confirm('Delete this session?')) {
-      await deleteSession(session._id);
+      try {
+        await deleteSession(session._id);
+        invalidateSessionCaches();
+      } catch (err) {
+        if (!isOnline() || !err.response) {
+          offlineDeleteSession(session._id);
+        } else {
+          console.error('Delete failed:', err);
+          return;
+        }
+      }
       onDelete?.(session._id);
     }
   };

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { getSessions } from '../api/sessions';
+import { getSessions, getCached } from '../api/sessions';
 import SessionCard from '../components/SessionCard';
 import SearchBar from '../components/SearchBar';
+import { makeCacheKey } from '../utils/cache';
 
 export default function Sessions() {
   const [sessions, setSessions] = useState([]);
@@ -10,17 +11,31 @@ export default function Sessions() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadSessions();
+    // Show cached data first
+    const params = {};
+    if (blockFilter) params.block = blockFilter;
+    if (dayFilter) params.day = dayFilter;
+
+    const cached = getCached('/sessions', params);
+    if (cached) {
+      setSessions(cached);
+      setLoading(false);
+    }
+
+    // Fetch fresh
+    loadSessions(!!cached, params);
   }, [blockFilter, dayFilter]);
 
-  const loadSessions = async () => {
-    setLoading(true);
+  const loadSessions = async (hasCached, params) => {
+    if (!hasCached) setLoading(true);
     try {
-      const params = {};
-      if (blockFilter) params.block = blockFilter;
-      if (dayFilter) params.day = dayFilter;
+      const p = params || {};
+      if (!params) {
+        if (blockFilter) p.block = blockFilter;
+        if (dayFilter) p.day = dayFilter;
+      }
 
-      const res = await getSessions(params);
+      const res = await getSessions(p);
       setSessions(res.data);
     } catch (err) {
       console.error('Failed to load sessions:', err);

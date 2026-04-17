@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { HiTrophy } from 'react-icons/hi2';
 import { GiTrophy, GiPodium, GiMuscleUp } from 'react-icons/gi';
-import { getLeaderboard } from '../api/sessions';
+import { getLeaderboard, getCached } from '../api/sessions';
 import { useAuth } from '../context/AuthContext';
 
 const RANK_STYLES = [
@@ -41,11 +41,19 @@ export default function Leaderboard() {
   const { user } = useAuth();
 
   useEffect(() => {
-    loadLeaderboard();
+    // Show cached data instantly
+    const cached = getCached('/leaderboard');
+    if (cached) {
+      setLeaderboard(cached);
+      setLoading(false);
+    }
+
+    // Fetch fresh in background
+    loadLeaderboard(!!cached);
   }, []);
 
-  const loadLeaderboard = async () => {
-    setLoading(true);
+  const loadLeaderboard = async (hasCached) => {
+    if (!hasCached) setLoading(true);
     try {
       const res = await getLeaderboard();
       setLeaderboard(res.data);

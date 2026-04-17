@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { HiPlusCircle, HiArrowRight } from 'react-icons/hi';
-import { getSessions, getPRs } from '../api/sessions';
+import { getSessions, getPRs, getCached } from '../api/sessions';
 import StatsPanel from '../components/StatsPanel';
 import SessionCard from '../components/SessionCard';
 
@@ -11,11 +11,23 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadData();
+    // 1. Show cached data instantly
+    const cachedSessions = getCached('/sessions');
+    const cachedPrs = getCached('/sessions/stats/prs');
+    if (cachedSessions) {
+      setSessions(cachedSessions);
+      setLoading(false);
+    }
+    if (cachedPrs) {
+      setPrs(cachedPrs);
+    }
+
+    // 2. Fetch fresh data in background
+    loadData(!!cachedSessions);
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (hasCached) => {
+    if (!hasCached) setLoading(true);
     try {
       const [sessRes, prRes] = await Promise.all([getSessions(), getPRs()]);
       setSessions(sessRes.data);

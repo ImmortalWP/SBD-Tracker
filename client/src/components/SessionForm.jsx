@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { HiPlus, HiTrash, HiCheck } from 'react-icons/hi';
-import { createSession, updateSession } from '../api/sessions';
+import { createSession, updateSession, offlineCreateSession, offlineUpdateSession, invalidateSessionCaches } from '../api/sessions';
+import { isOnline } from '../utils/offlineQueue';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MAIN_LIFTS = ['Squat', 'Bench', 'Deadlift'];
@@ -176,9 +177,20 @@ export default function SessionForm({ existingSession }) {
       } else {
         await createSession(payload);
       }
+      invalidateSessionCaches();
       navigate('/sessions');
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save session.');
+      // If offline or network error, queue the mutation
+      if (!isOnline() || !err.response) {
+        if (isEditing) {
+          offlineUpdateSession(existingSession._id, payload);
+        } else {
+          offlineCreateSession(payload);
+        }
+        navigate('/sessions');
+      } else {
+        setError(err.response?.data?.error || 'Failed to save session.');
+      }
     } finally {
       setLoading(false);
     }
