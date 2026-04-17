@@ -9,6 +9,7 @@ const SetSchema = new mongoose.Schema({
 const ExerciseSchema = new mongoose.Schema({
   name: { type: String, required: true },
   category: { type: String, enum: ['main', 'secondary', 'accessory'], default: 'main' },
+  percentage: { type: Number },
   sets: [SetSchema],
 });
 
