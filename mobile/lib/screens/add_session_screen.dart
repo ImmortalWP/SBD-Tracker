@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/offline_queue.dart';
 import '../theme/app_theme.dart';
 import 'package:intl/intl.dart';
 
@@ -13,21 +14,30 @@ class AddSessionScreen extends StatefulWidget {
 
 class _AddSessionScreenState extends State<AddSessionScreen> {
   final _blockCtrl = TextEditingController();
+  final _weekCtrl = TextEditingController();
   final _pctCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   String _day = 'Sunday';
   String _date = DateFormat('yyyy-MM-dd').format(DateTime.now());
-  String _startTime = '';
-  String _endTime = '';
   bool _loading = false;
   String _error = '';
 
   final _days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   final _mainLifts = ['Squat', 'Bench', 'Deadlift'];
 
-  // exercises: [{name, category, sets: [{weight, sets, reps}]}]
-  List<Map<String, dynamic>> _exercises = [];
+  // Secondary lift variations grouped by parent main lift
+  static const Map<String, List<String>> _secondaryLifts = {
+    'Squat': ['Pause Squat', 'Box Squat', 'Tempo Squat', 'Pin Squat'],
+    'Bench': ['Pause Bench', 'Close Grip Bench', 'Larsen Press', 'Pin Bench', 'Wide Grip Bench'],
+    'Deadlift': ['Pause Deadlift', 'Deficit Deadlift', 'Block Pull', 'RDL'],
+  };
 
+  // All secondary lift names flattened
+  List<String> get _allSecondaryLifts {
+    return _secondaryLifts.values.expand((e) => e).toList();
+  }
+
+  List<Map<String, dynamic>> _exercises = [];
   bool get _isEditing => widget.existingSession != null;
 
   @override
@@ -36,11 +46,10 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
     if (_isEditing) {
       final s = widget.existingSession!;
       _blockCtrl.text = s['block'].toString();
+      if (s['week'] != null) _weekCtrl.text = s['week'].toString();
       if (s['percentage'] != null) _pctCtrl.text = s['percentage'].toString();
       _day = s['day'] ?? 'Sunday';
       if (s['date'] != null) _date = s['date'].toString().substring(0, 10);
-      _startTime = s['startTime'] ?? '';
-      _endTime = s['endTime'] ?? '';
       _notesCtrl.text = s['notes'] ?? '';
       _exercises = (s['exercises'] as List).map((ex) {
         return {
@@ -94,11 +103,10 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
 
     final payload = {
       'block': int.parse(_blockCtrl.text),
+      if (_weekCtrl.text.isNotEmpty) 'week': int.parse(_weekCtrl.text),
       if (_pctCtrl.text.isNotEmpty) 'percentage': int.parse(_pctCtrl.text),
       'day': _day,
       'date': _date,
-      if (_startTime.isNotEmpty) 'startTime': _startTime,
-      if (_endTime.isNotEmpty) 'endTime': _endTime,
       'notes': _notesCtrl.text,
       'exercises': exercises,
     };
@@ -112,7 +120,27 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      // If network error, queue offline
+      final errMsg = e.toString();
+      if (errMsg.contains('SocketException') || errMsg.contains('ClientException') || errMsg.contains('TimeoutException') || errMsg.contains('Connection')) {
+        await OfflineQueue.enqueue({
+          'type': _isEditing ? 'update' : 'create',
+          if (_isEditing) 'sessionId': widget.existingSession!['_id'],
+          'data': payload,
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Saved offline! Will sync when connected.'),
+              backgroundColor: AppTheme.accentAmber,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } else {
+        setState(() => _error = errMsg.replaceFirst('Exception: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -145,7 +173,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
                 child: Text(_error, style: const TextStyle(color: AppTheme.accentRed, fontSize: 13)),
               ),
 
-            // Block, Percentage, Day, Date
+            // Block, Week, Percentage
             Row(
               children: [
                 Expanded(
@@ -158,14 +186,24 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: TextField(
+                    controller: _weekCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'WEEK #'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
                     controller: _pctCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'INTENSITY %'),
+                    decoration: const InputDecoration(labelText: '% 1RM'),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+
+            // Day, Date
             Row(
               children: [
                 Expanded(
@@ -173,7 +211,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
                     value: _day,
                     decoration: const InputDecoration(labelText: 'DAY'),
                     dropdownColor: AppTheme.bg900,
-                    items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+                    items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontSize: 14)))).toList(),
                     onChanged: (v) => setState(() => _day = v ?? _day),
                   ),
                 ),
@@ -208,10 +246,10 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
 
             ..._exercises.asMap().entries.map((entry) => _buildExercise(entry.key, entry.value)),
 
-            // Add exercise buttons
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: [
                 _addExerciseBtn('Main', 'main', AppTheme.accentRed),
                 _addExerciseBtn('Secondary', 'secondary', AppTheme.accentBlue),
@@ -267,6 +305,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
             : AppTheme.accentGreen;
     final sets = exercise['sets'] as List;
     final isMain = category == 'main';
+    final isSecondary = category == 'secondary';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -302,7 +341,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Exercise name
+            // Exercise name — dropdown for main AND secondary
             if (isMain)
               DropdownButtonFormField<String>(
                 value: _mainLifts.contains(exercise['name']) ? exercise['name'] : null,
@@ -310,6 +349,33 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
                 dropdownColor: AppTheme.bg900,
                 items: _mainLifts.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
                 onChanged: (v) => setState(() => exercise['name'] = v ?? ''),
+              )
+            else if (isSecondary)
+              DropdownButtonFormField<String>(
+                value: _allSecondaryLifts.contains(exercise['name']) ? exercise['name'] : null,
+                decoration: const InputDecoration(labelText: 'VARIATION', isDense: true),
+                dropdownColor: AppTheme.bg900,
+                isExpanded: true,
+                items: _secondaryLifts.entries.expand((mainLift) {
+                  return [
+                    // Group header
+                    DropdownMenuItem(
+                      enabled: false,
+                      value: '__header_${mainLift.key}',
+                      child: Text(
+                        '── ${mainLift.key} ──',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: catColor.withValues(alpha: 0.6)),
+                      ),
+                    ),
+                    // Variations
+                    ...mainLift.value.map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 14)))),
+                  ];
+                }).toList(),
+                onChanged: (v) {
+                  if (v != null && !v.startsWith('__header_')) {
+                    setState(() => exercise['name'] = v);
+                  }
+                },
               )
             else
               TextField(
@@ -384,7 +450,6 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
               );
             }),
 
-            // Add set
             TextButton.icon(
               onPressed: () => setState(() => sets.add({'weight': '', 'sets': '1', 'reps': ''})),
               icon: Icon(Icons.add, size: 16, color: catColor),
@@ -400,6 +465,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
   @override
   void dispose() {
     _blockCtrl.dispose();
+    _weekCtrl.dispose();
     _pctCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
