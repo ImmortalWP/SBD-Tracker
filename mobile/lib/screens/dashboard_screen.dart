@@ -139,50 +139,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
       {'name': 'Deadlift', 'icon': '🏋️', 'color': AppTheme.accentAmber},
     ];
 
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: lifts.map((lift) {
-          final name = lift['name'] as String;
-          final color = lift['color'] as Color;
-          final val = _prs[name] ?? 0;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: lifts.map((lift) {
+        final name = lift['name'] as String;
+        final color = lift['color'] as Color;
+        final val = _prs[name] ?? 0;
 
-          return Expanded(
-            child: Container(
-              margin: EdgeInsets.only(right: lift != lifts.last ? 8 : 0),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: color.withValues(alpha: 0.15)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(lift['icon'] as String, style: const TextStyle(fontSize: 20)),
-                      const SizedBox(height: 6),
-                      Text(name, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '${val}kg',
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.text50, fontFamily: 'monospace'),
-                    ),
-                  ),
-                ],
-              ),
+        return Expanded(
+          child: Container(
+            height: 120,
+            margin: EdgeInsets.only(right: lift != lifts.last ? 8 : 0),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: color.withValues(alpha: 0.15)),
             ),
-          );
-        }).toList(),
-      ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(lift['icon'] as String, style: const TextStyle(fontSize: 20)),
+                const SizedBox(height: 6),
+                Text(name, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                const Spacer(),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${val}kg',
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.text50, fontFamily: 'monospace'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 

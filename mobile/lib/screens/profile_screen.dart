@@ -166,16 +166,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 24),
 
           // Stats row - always 4 cards, same size
-          GridView.count(
-            crossAxisCount: 4,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 8,
-            childAspectRatio: 0.85,
+          Row(
             children: [
               _statBox('Total', '${total}kg', AppTheme.accentRed),
+              const SizedBox(width: 8),
               _statBox('Sessions', '$_totalSessions', AppTheme.accentBlue),
+              const SizedBox(width: 8),
               _statBox('BW', bw != null ? '${bw}kg' : '—', AppTheme.accentAmber),
+              const SizedBox(width: 8),
               _statBox('Wilks', wilks ?? '—', AppTheme.accentGreen),
             ],
           ),
@@ -316,23 +314,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _statBox(String label, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: color, fontFamily: 'monospace')),
-          ),
-          const SizedBox(height: 2),
-          Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.text500)),
-        ],
+    return Expanded(
+      child: Container(
+        height: 80,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.15)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: color, fontFamily: 'monospace')),
+            ),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.text500)),
+          ],
+        ),
       ),
     );
   }

@@ -55,8 +55,9 @@ class SessionCard extends StatelessWidget {
                         children: [
                           _badge('Block ${session['block']}', AppTheme.accentRed),
                           if (session['week'] != null) _badge('Week ${session['week']}', AppTheme.accentBlue),
-                          if (session['percentage'] != null) _badge('${session['percentage']}%', AppTheme.accentGreen),
                           _badge(session['day'] ?? '', AppTheme.accentAmber),
+                          if (session['duration'] != null && (session['duration'] as num) > 0)
+                            _badge('${session['duration']}min', AppTheme.accentGreen),
                         ],
                       ),
                       if (formattedDate != null) ...[
@@ -142,7 +143,7 @@ class SessionCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Exercise name - BIG
+              // Exercise name + %RM
               Row(
                 children: [
                   Container(
@@ -151,9 +152,31 @@ class SessionCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      ex['name'],
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.text50, letterSpacing: -0.3),
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            ex['name'],
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.text50, letterSpacing: -0.3),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (ex['percentage'] != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentGreen.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(color: AppTheme.accentGreen.withValues(alpha: 0.25)),
+                            ),
+                            child: Text(
+                              '${ex['percentage']}%',
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.accentGreen),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   // Total volume badge

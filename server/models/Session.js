@@ -21,6 +21,7 @@ const SessionSchema = new mongoose.Schema(
     percentage: { type: Number },
     day: { type: String, required: true },
     date: { type: Date, default: Date.now },
+    duration: { type: Number },
     startTime: { type: String },
     endTime: { type: String },
     exercises: [ExerciseSchema],

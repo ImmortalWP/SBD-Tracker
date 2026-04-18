@@ -1,10 +1,3 @@
-The app is runnig but there are some issue in the app. 
-1. The icon is of flutter change it to the sbd.
-2. The analytics tab is missing.
-3. In the log section add the week option also like week 1 , week 2 
-4. In the secondary lifts i have to type it manually. Make it drop down option like main lift 
- in squats Pause squats, box squats, tempo squats, pin squats
- in bench pause bench, close grip larsen, pin bench, wide grip larsen 
- in dead lift pause deadlift
-5. The app works offline but when i log without internet it fails, Make it like take the log even when the internet is not availabe and syn when the internet is connected. 
-6. In the recent session the sets and reps are not showing properly make it easy to look 
+in the flutter app
+
+sometimes i train the squats on different %rm and bench on different %rm in same session. so i think in log we should change it %rm for each main life rather as a whole and make the %rm field optional. In home page the personal record card is not same and algined. Make all of them same even though these is diffeerence in the number. same on the profile page the total weight card is not properly aligned with other card. Add the timer in the log session to track the total workput duration. Also add the volume progression grpah in the analytics section
