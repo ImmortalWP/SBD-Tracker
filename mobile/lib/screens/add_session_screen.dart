@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../services/offline_queue.dart';
+import '../services/draft_service.dart';
 import '../theme/app_theme.dart';
 import 'package:intl/intl.dart';
 
@@ -17,15 +19,16 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
   final _blockCtrl = TextEditingController();
   final _weekCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+
   String _day = 'Sunday';
   String _date = DateFormat('yyyy-MM-dd').format(DateTime.now());
   bool _loading = false;
   String _error = '';
 
   // Timer
-  final Stopwatch _stopwatch = Stopwatch();
-  Timer? _timer;
-  String _elapsed = '00:00';
+  int _elapsedSeconds = 0;
+  Timer? _timerTick;
+  bool _timerRunning = false;
 
   final _days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   final _mainLifts = ['Squat', 'Bench', 'Deadlift'];
@@ -38,135 +41,206 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
 
   List<String> get _allSecondaryLifts => _secondaryLifts.values.expand((e) => e).toList();
 
-  List<Map<String, dynamic>> _exercises = [];
+  // Each exercise: { name, category, pctCtrl, sets: [ {wCtrl, sCtrl, rCtrl} ] }
+  final List<_ExData> _exercises = [];
+
   bool get _isEditing => widget.existingSession != null;
 
   @override
   void initState() {
     super.initState();
     if (_isEditing) {
-      final s = widget.existingSession!;
-      _blockCtrl.text = s['block'].toString();
-      if (s['week'] != null) _weekCtrl.text = s['week'].toString();
-      _day = s['day'] ?? 'Sunday';
-      if (s['date'] != null) _date = s['date'].toString().substring(0, 10);
-      _notesCtrl.text = s['notes'] ?? '';
-      _exercises = (s['exercises'] as List).map((ex) {
-        return {
-          'name': ex['name'],
-          'category': ex['category'],
-          'percentage': ex['percentage']?.toString() ?? '',
-          'sets': (ex['sets'] as List).map((st) {
-            return {'weight': st['weight'].toString(), 'sets': st['sets'].toString(), 'reps': st['reps'].toString()};
-          }).toList(),
-        };
-      }).toList();
+      _loadExisting();
     } else {
-      _exercises = [_emptyExercise('main')];
-      // Auto-start timer for new sessions
-      _startTimer();
+      _tryLoadDraft();
     }
   }
 
-  void _startTimer() {
-    _stopwatch.start();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {
-          final mins = _stopwatch.elapsed.inMinutes;
-          final secs = _stopwatch.elapsed.inSeconds % 60;
-          _elapsed = '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
-        });
+  void _loadExisting() {
+    final s = widget.existingSession!;
+    _blockCtrl.text = s['block'].toString();
+    if (s['week'] != null) _weekCtrl.text = s['week'].toString();
+    _day = s['day'] ?? 'Sunday';
+    if (s['date'] != null) _date = s['date'].toString().substring(0, 10);
+    _notesCtrl.text = s['notes'] ?? '';
+    for (final ex in (s['exercises'] as List)) {
+      _exercises.add(_ExData.fromMap(ex));
+    }
+  }
+
+  Future<void> _tryLoadDraft() async {
+    final draft = await DraftService.loadDraft();
+    if (draft != null && mounted) {
+      final resume = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.bg850,
+          title: const Text('Resume Session?'),
+          content: const Text('You have an in-progress session. Resume it?', style: TextStyle(color: AppTheme.text400)),
+          actions: [
+            TextButton(
+              onPressed: () { DraftService.clearDraft(); Navigator.pop(ctx, false); },
+              child: const Text('Discard', style: TextStyle(color: AppTheme.text500)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Resume', style: TextStyle(color: AppTheme.accentGreen)),
+            ),
+          ],
+        ),
+      );
+
+      if (resume == true && draft.isNotEmpty) {
+        _blockCtrl.text = draft['block']?.toString() ?? '';
+        _weekCtrl.text = draft['week']?.toString() ?? '';
+        _day = draft['day'] ?? 'Sunday';
+        _date = draft['date'] ?? _date;
+        _notesCtrl.text = draft['notes'] ?? '';
+        _elapsedSeconds = draft['elapsedSeconds'] ?? 0;
+        final exList = draft['exercises'] as List? ?? [];
+        for (final ex in exList) {
+          _exercises.add(_ExData.fromMap(ex));
+        }
+        setState(() {});
+        _startTimer();
+        return;
       }
+    }
+
+    // Fresh session
+    _exercises.add(_ExData.empty('main'));
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timerRunning = true;
+    _timerTick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _elapsedSeconds++);
     });
   }
 
   void _toggleTimer() {
-    if (_stopwatch.isRunning) {
-      _stopwatch.stop();
-      _timer?.cancel();
+    if (_timerRunning) {
+      _timerTick?.cancel();
+      _timerRunning = false;
     } else {
       _startTimer();
     }
     setState(() {});
   }
 
-  Map<String, dynamic> _emptyExercise(String category) {
-    return {
-      'name': '',
-      'category': category,
-      'percentage': '',
-      'sets': [{'weight': '', 'sets': '1', 'reps': ''}],
-    };
+  String get _timerDisplay {
+    final m = (_elapsedSeconds ~/ 60).toString().padLeft(2, '0');
+    final s = (_elapsedSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  // Save draft when going back
+  Future<bool> _onWillPop() async {
+    if (_isEditing) return true;
+    // Only save draft if something was entered
+    final hasData = _blockCtrl.text.isNotEmpty || _exercises.any((e) => e.name.isNotEmpty);
+    if (hasData) {
+      await _saveDraft();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('💾 Session saved as draft — timer keeps running'),
+          backgroundColor: AppTheme.accentAmber,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ));
+      }
+    }
+    return true;
+  }
+
+  Future<void> _saveDraft() async {
+    await DraftService.saveDraft({
+      'block': _blockCtrl.text,
+      'week': _weekCtrl.text,
+      'day': _day,
+      'date': _date,
+      'notes': _notesCtrl.text,
+      'elapsedSeconds': _elapsedSeconds,
+      'exercises': _exercises.map((e) => e.toMap()).toList(),
+    });
   }
 
   Future<void> _submit() async {
-    if (_blockCtrl.text.isEmpty || _day.isEmpty) {
-      setState(() => _error = 'Block and day are required.');
+    if (_blockCtrl.text.isEmpty) {
+      setState(() => _error = 'Block number is required.');
       return;
     }
 
-    final exercises = _exercises
-        .where((ex) => (ex['name'] as String).trim().isNotEmpty)
-        .map((ex) => {
-              'name': (ex['name'] as String).trim(),
-              'category': ex['category'],
-              if ((ex['percentage'] as String).isNotEmpty)
-                'percentage': int.tryParse(ex['percentage']),
-              'sets': (ex['sets'] as List)
-                  .where((s) => s['weight'].toString().isNotEmpty && s['reps'].toString().isNotEmpty)
-                  .map((s) => {
-                        'weight': num.parse(s['weight'].toString()),
-                        'sets': int.tryParse(s['sets'].toString()) ?? 1,
-                        'reps': int.parse(s['reps'].toString()),
-                      })
-                  .toList(),
-            })
-        .where((ex) => (ex['sets'] as List).isNotEmpty)
-        .toList();
+    final exercises = <Map<String, dynamic>>[];
+    for (final ex in _exercises) {
+      if (ex.name.trim().isEmpty) continue;
+      final sets = <Map<String, dynamic>>[];
+      for (final s in ex.sets) {
+        final w = s.wCtrl.text.trim();
+        final r = s.rCtrl.text.trim();
+        final st = s.sCtrl.text.trim();
+        if (w.isEmpty || r.isEmpty) continue;
+        sets.add({
+          'weight': double.tryParse(w) ?? 0,
+          'reps': int.tryParse(r) ?? 0,
+          'sets': int.tryParse(st) ?? 1,
+        });
+      }
+      if (sets.isEmpty) continue;
+      final pct = ex.pctCtrl.text.trim();
+      exercises.add({
+        'name': ex.name.trim(),
+        'category': ex.category,
+        if (pct.isNotEmpty) 'percentage': int.tryParse(pct),
+        'sets': sets,
+      });
+    }
 
     if (exercises.isEmpty) {
       setState(() => _error = 'Add at least one exercise with sets.');
       return;
     }
 
-    // Calculate duration from timer
-    final durationMins = _stopwatch.elapsed.inMinutes;
-
-    final payload = {
-      'block': int.parse(_blockCtrl.text),
-      if (_weekCtrl.text.isNotEmpty) 'week': int.parse(_weekCtrl.text),
+    final durationMin = _elapsedSeconds ~/ 60;
+    final payload = <String, dynamic>{
+      'block': int.tryParse(_blockCtrl.text) ?? 1,
+      if (_weekCtrl.text.isNotEmpty) 'week': int.tryParse(_weekCtrl.text),
       'day': _day,
       'date': _date,
-      if (durationMins > 0) 'duration': durationMins,
-      'notes': _notesCtrl.text,
+      if (durationMin > 0) 'duration': durationMin,
+      'notes': _notesCtrl.text.trim(),
       'exercises': exercises,
     };
 
     setState(() { _loading = true; _error = ''; });
+
     try {
       if (_isEditing) {
         await ApiService.updateSession(widget.existingSession!['_id'], payload);
       } else {
         await ApiService.createSession(payload);
       }
+      await DraftService.clearDraft();
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      final errMsg = e.toString();
-      if (errMsg.contains('SocketException') || errMsg.contains('ClientException') || errMsg.contains('TimeoutException') || errMsg.contains('Connection')) {
+      final msg = e.toString();
+      if (msg.contains('SocketException') || msg.contains('ClientException') || msg.contains('Connection') || msg.contains('Timeout')) {
         await OfflineQueue.enqueue({
           'type': _isEditing ? 'update' : 'create',
           if (_isEditing) 'sessionId': widget.existingSession!['_id'],
           'data': payload,
         });
+        await DraftService.clearDraft();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Saved offline! Will sync when connected.'), backgroundColor: AppTheme.accentAmber, behavior: SnackBarBehavior.floating),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('📶 Saved offline — will sync when connected'),
+            backgroundColor: AppTheme.accentAmber, behavior: SnackBarBehavior.floating,
+          ));
           Navigator.pop(context, true);
         }
       } else {
-        setState(() => _error = errMsg.replaceFirst('Exception: ', ''));
+        setState(() => _error = msg.replaceFirst('Exception: ', ''));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -175,294 +249,197 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_isEditing ? 'Edit Session' : 'Log Session'),
-        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(context)),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Timer card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppTheme.accentRed.withValues(alpha: 0.12), AppTheme.accentAmber.withValues(alpha: 0.08)],
-                  begin: Alignment.topLeft, end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.15)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.timer_outlined, color: AppTheme.accentRed, size: 22),
-                  const SizedBox(width: 12),
-                  Text(_elapsed,
-                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppTheme.text50, fontFamily: 'monospace', letterSpacing: 2),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: _toggleTimer,
-                    child: Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _stopwatch.isRunning ? AppTheme.accentRed.withValues(alpha: 0.2) : AppTheme.accentGreen.withValues(alpha: 0.2),
-                        border: Border.all(color: _stopwatch.isRunning ? AppTheme.accentRed.withValues(alpha: 0.4) : AppTheme.accentGreen.withValues(alpha: 0.4)),
-                      ),
-                      child: Icon(
-                        _stopwatch.isRunning ? Icons.pause : Icons.play_arrow,
-                        color: _stopwatch.isRunning ? AppTheme.accentRed : AppTheme.accentGreen,
-                        size: 22,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final shouldPop = await _onWillPop();
+        if (shouldPop && context.mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.bg950,
+        appBar: AppBar(
+          title: Text(_isEditing ? 'Edit Session' : 'Log Session'),
+          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () async {
+            final shouldPop = await _onWillPop();
+            if (shouldPop && mounted) Navigator.pop(context);
+          }),
+          actions: [
+            TextButton(
+              onPressed: _loading ? null : _submit,
+              child: _loading
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentRed))
+                  : const Text('SAVE', style: TextStyle(color: AppTheme.accentRed, fontWeight: FontWeight.w800, fontSize: 15)),
             ),
-
-            if (_error.isNotEmpty)
-              Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.accentRed.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.2)),
-                ),
-                child: Text(_error, style: const TextStyle(color: AppTheme.accentRed, fontSize: 13)),
-              ),
-
-            // Block, Week row
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(controller: _blockCtrl, keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'BLOCK #')),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(controller: _weekCtrl, keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'WEEK #')),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Day, Date
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _day,
-                    decoration: const InputDecoration(labelText: 'DAY'),
-                    dropdownColor: AppTheme.bg900,
-                    items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontSize: 14)))).toList(),
-                    onChanged: (v) => setState(() => _day = v ?? _day),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.tryParse(_date) ?? DateTime.now(),
-                        firstDate: DateTime(2020), lastDate: DateTime(2030),
-                      );
-                      if (picked != null) setState(() => _date = DateFormat('yyyy-MM-dd').format(picked));
-                    },
-                    child: AbsorbPointer(
-                      child: TextField(
-                        decoration: InputDecoration(labelText: 'DATE', hintText: _date),
-                        controller: TextEditingController(text: _date),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Exercises
-            const Text('EXERCISES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text400, letterSpacing: 1)),
-            const SizedBox(height: 10),
-            ..._exercises.asMap().entries.map((entry) => _buildExercise(entry.key, entry.value)),
-
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8, runSpacing: 8,
-              children: [
-                _addExerciseBtn('Main', 'main', AppTheme.accentRed),
-                _addExerciseBtn('Secondary', 'secondary', AppTheme.accentBlue),
-                _addExerciseBtn('Accessory', 'accessory', AppTheme.accentGreen),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            TextField(controller: _notesCtrl, maxLines: 3,
-                decoration: const InputDecoration(labelText: 'NOTES', hintText: 'Optional session notes...')),
-            const SizedBox(height: 20),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _submit,
-                child: _loading
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(_isEditing ? 'UPDATE SESSION' : 'SAVE SESSION'),
-              ),
-            ),
-            const SizedBox(height: 40),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _addExerciseBtn(String label, String category, Color color) {
-    return OutlinedButton.icon(
-      onPressed: () => setState(() => _exercises.add(_emptyExercise(category))),
-      icon: Icon(Icons.add, size: 16, color: color),
-      label: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(color: color.withValues(alpha: 0.3)),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-  }
-
-  Widget _buildExercise(int exIdx, Map<String, dynamic> exercise) {
-    final category = exercise['category'] as String;
-    final catColor = category == 'main' ? AppTheme.accentRed : category == 'secondary' ? AppTheme.accentBlue : AppTheme.accentGreen;
-    final sets = exercise['sets'] as List;
-    final isMain = category == 'main';
-    final isSecondary = category == 'secondary';
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Category badge + remove
-            Row(
+        body: GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: catColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: catColor.withValues(alpha: 0.2)),
-                  ),
-                  child: Text(category.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: catColor, letterSpacing: 0.5)),
-                ),
-                const Spacer(),
-                if (_exercises.length > 1)
-                  IconButton(icon: const Icon(Icons.close, size: 18, color: AppTheme.text500),
-                      onPressed: () => setState(() => _exercises.removeAt(exIdx)),
-                      constraints: const BoxConstraints(), padding: EdgeInsets.zero),
-              ],
-            ),
-            const SizedBox(height: 8),
+                // Timer
+                if (!_isEditing) _buildTimer(),
+                if (!_isEditing) const SizedBox(height: 14),
 
-            // Exercise name + %RM on same row for main lifts
-            if (isMain)
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: DropdownButtonFormField<String>(
-                      value: _mainLifts.contains(exercise['name']) ? exercise['name'] : null,
-                      decoration: const InputDecoration(labelText: 'EXERCISE', isDense: true),
-                      dropdownColor: AppTheme.bg900,
-                      items: _mainLifts.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
-                      onChanged: (v) => setState(() => exercise['name'] = v ?? ''),
-                    ),
+                if (_error.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: AppTheme.accentRed.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                    child: Text(_error, style: const TextStyle(color: AppTheme.accentRed, fontSize: 13)),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 1,
-                    child: TextField(
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: '%RM', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12)),
-                      controller: TextEditingController(text: exercise['percentage']),
-                      onChanged: (v) => exercise['percentage'] = v,
-                    ),
-                  ),
+                  const SizedBox(height: 12),
                 ],
-              )
-            else if (isSecondary)
-              DropdownButtonFormField<String>(
-                value: _allSecondaryLifts.contains(exercise['name']) ? exercise['name'] : null,
-                decoration: const InputDecoration(labelText: 'VARIATION', isDense: true),
-                dropdownColor: AppTheme.bg900, isExpanded: true,
-                items: _secondaryLifts.entries.expand((mainLift) => [
-                  DropdownMenuItem(enabled: false, value: '__header_${mainLift.key}',
-                    child: Text('── ${mainLift.key} ──', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: catColor.withValues(alpha: 0.6)))),
-                  ...mainLift.value.map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 14)))),
-                ]).toList(),
-                onChanged: (v) { if (v != null && !v.startsWith('__header_')) setState(() => exercise['name'] = v); },
-              )
-            else
-              TextField(
-                decoration: const InputDecoration(labelText: 'EXERCISE NAME', isDense: true),
-                controller: TextEditingController(text: exercise['name'])..selection = TextSelection.collapsed(offset: (exercise['name'] as String).length),
-                onChanged: (v) => exercise['name'] = v,
-              ),
-            const SizedBox(height: 10),
 
-            // Sets
-            const Row(children: [
-              Expanded(flex: 3, child: Text('Weight', style: TextStyle(fontSize: 10, color: AppTheme.text500, fontWeight: FontWeight.w600))),
-              SizedBox(width: 6),
-              Expanded(flex: 2, child: Text('Sets', style: TextStyle(fontSize: 10, color: AppTheme.text500, fontWeight: FontWeight.w600))),
-              SizedBox(width: 6),
-              Expanded(flex: 2, child: Text('Reps', style: TextStyle(fontSize: 10, color: AppTheme.text500, fontWeight: FontWeight.w600))),
-              SizedBox(width: 30),
-            ]),
-            const SizedBox(height: 6),
-            ...sets.asMap().entries.map((sEntry) {
-              final sIdx = sEntry.key;
-              final set = sEntry.value as Map<String, dynamic>;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(children: [
-                  Expanded(flex: 3, child: TextField(keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(hintText: 'kg', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
-                      controller: TextEditingController(text: set['weight'].toString() == '0' ? '' : set['weight'].toString()),
-                      onChanged: (v) => set['weight'] = v)),
-                  const SizedBox(width: 6),
-                  Expanded(flex: 2, child: TextField(keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(hintText: '#', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
-                      controller: TextEditingController(text: set['sets'].toString()),
-                      onChanged: (v) => set['sets'] = v)),
-                  const SizedBox(width: 6),
-                  Expanded(flex: 2, child: TextField(keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(hintText: '#', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10)),
-                      controller: TextEditingController(text: set['reps'].toString() == '0' ? '' : set['reps'].toString()),
-                      onChanged: (v) => set['reps'] = v)),
-                  SizedBox(width: 30, child: sets.length > 1
-                      ? IconButton(icon: const Icon(Icons.remove_circle_outline, size: 18, color: AppTheme.text500),
-                          onPressed: () => setState(() => sets.removeAt(sIdx)), constraints: const BoxConstraints(), padding: EdgeInsets.zero)
-                      : const SizedBox()),
+                // Meta fields
+                _buildMetaFields(),
+                const SizedBox(height: 16),
+
+                const Text('EXERCISES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text500, letterSpacing: 1)),
+                const SizedBox(height: 8),
+
+                // Each exercise as its own StatefulWidget - this is the key fix
+                ..._exercises.asMap().entries.map((entry) => _ExerciseCard(
+                  key: ValueKey(entry.value.id),
+                  data: entry.value,
+                  mainLifts: _mainLifts,
+                  secondaryLifts: _secondaryLifts,
+                  allSecondaryLifts: _allSecondaryLifts,
+                  canDelete: _exercises.length > 1,
+                  onDelete: () => setState(() {
+                    entry.value.dispose();
+                    _exercises.removeAt(entry.key);
+                  }),
+                )),
+
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 6, children: [
+                  _addBtn('+ Main', 'main', AppTheme.accentRed),
+                  _addBtn('+ Secondary', 'secondary', AppTheme.accentBlue),
+                  _addBtn('+ Accessory', 'accessory', AppTheme.accentGreen),
                 ]),
-              );
-            }),
-            TextButton.icon(
-              onPressed: () => setState(() => sets.add({'weight': '', 'sets': '1', 'reps': ''})),
-              icon: Icon(Icons.add, size: 16, color: catColor),
-              label: Text('Add Set', style: TextStyle(fontSize: 12, color: catColor)),
-              style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                const SizedBox(height: 16),
+
+                TextField(
+                  controller: _notesCtrl,
+                  maxLines: 2,
+                  style: const TextStyle(fontSize: 14, color: AppTheme.text200),
+                  decoration: InputDecoration(
+                    labelText: 'Notes',
+                    filled: true, fillColor: AppTheme.bg850,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTimer() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [AppTheme.accentRed.withValues(alpha: 0.1), Colors.transparent]),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.15)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.timer_outlined, color: AppTheme.accentRed, size: 20),
+        const SizedBox(width: 10),
+        Text(_timerDisplay, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppTheme.text100, fontFamily: 'monospace', letterSpacing: 2)),
+        const Spacer(),
+        GestureDetector(
+          onTap: _toggleTimer,
+          child: Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _timerRunning ? AppTheme.accentRed.withValues(alpha: 0.15) : AppTheme.accentGreen.withValues(alpha: 0.15),
+            ),
+            child: Icon(_timerRunning ? Icons.pause : Icons.play_arrow,
+                color: _timerRunning ? AppTheme.accentRed : AppTheme.accentGreen, size: 20),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildMetaFields() {
+    return Column(children: [
+      Row(children: [
+        Expanded(child: _numField(_blockCtrl, 'Block')),
+        const SizedBox(width: 10),
+        Expanded(child: _numField(_weekCtrl, 'Week')),
+      ]),
+      const SizedBox(height: 10),
+      Row(children: [
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            value: _day,
+            decoration: _deco('Day'),
+            dropdownColor: AppTheme.bg850,
+            style: const TextStyle(fontSize: 15, color: AppTheme.text100, fontWeight: FontWeight.w600),
+            items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+            onChanged: (v) => _day = v ?? _day,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: GestureDetector(
+            onTap: () async {
+              final picked = await showDatePicker(context: context,
+                  initialDate: DateTime.tryParse(_date) ?? DateTime.now(),
+                  firstDate: DateTime(2020), lastDate: DateTime(2030));
+              if (picked != null) setState(() => _date = DateFormat('yyyy-MM-dd').format(picked));
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              decoration: BoxDecoration(color: AppTheme.bg850, borderRadius: BorderRadius.circular(10)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Date', style: TextStyle(fontSize: 11, color: AppTheme.text500)),
+                const SizedBox(height: 2),
+                Text(_date, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text100)),
+              ]),
+            ),
+          ),
+        ),
+      ]),
+    ]);
+  }
+
+  Widget _numField(TextEditingController ctrl, String label) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.text50),
+      decoration: _deco(label),
+    );
+  }
+
+  InputDecoration _deco(String label) => InputDecoration(
+    labelText: label,
+    labelStyle: const TextStyle(fontSize: 12, color: AppTheme.text500),
+    filled: true, fillColor: AppTheme.bg850,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+  );
+
+  Widget _addBtn(String label, String category, Color color) {
+    return GestureDetector(
+      onTap: () => setState(() => _exercises.add(_ExData.empty(category))),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
       ),
     );
   }
@@ -472,8 +449,294 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
     _blockCtrl.dispose();
     _weekCtrl.dispose();
     _notesCtrl.dispose();
-    _timer?.cancel();
-    _stopwatch.stop();
+    _timerTick?.cancel();
+    for (final ex in _exercises) {
+      ex.dispose();
+    }
     super.dispose();
+  }
+}
+
+// ────────────────────────────────────────
+// Exercise data model with unique ID
+// ────────────────────────────────────────
+class _ExData {
+  final String id;
+  String name;
+  String category;
+  final TextEditingController pctCtrl;
+  final List<_SetData> sets;
+
+  _ExData({required this.id, required this.name, required this.category, required this.pctCtrl, required this.sets});
+
+  factory _ExData.empty(String category) => _ExData(
+    id: DateTime.now().microsecondsSinceEpoch.toString(),
+    name: '', category: category,
+    pctCtrl: TextEditingController(),
+    sets: [_SetData.empty()],
+  );
+
+  factory _ExData.fromMap(Map<String, dynamic> m) {
+    final sets = (m['sets'] as List? ?? []).map((s) => _SetData(
+      wCtrl: TextEditingController(text: (s['weight'] ?? '').toString()),
+      sCtrl: TextEditingController(text: (s['sets'] ?? '1').toString()),
+      rCtrl: TextEditingController(text: (s['reps'] ?? '').toString()),
+    )).toList();
+    if (sets.isEmpty) sets.add(_SetData.empty());
+    return _ExData(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      name: m['name'] ?? '',
+      category: m['category'] ?? 'main',
+      pctCtrl: TextEditingController(text: (m['percentage'] ?? '').toString()),
+      sets: sets,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'name': name,
+    'category': category,
+    'percentage': pctCtrl.text,
+    'sets': sets.map((s) => {
+      'weight': s.wCtrl.text,
+      'sets': s.sCtrl.text,
+      'reps': s.rCtrl.text,
+    }).toList(),
+  };
+
+  void dispose() {
+    pctCtrl.dispose();
+    for (final s in sets) s.dispose();
+  }
+}
+
+class _SetData {
+  final TextEditingController wCtrl;
+  final TextEditingController sCtrl;
+  final TextEditingController rCtrl;
+
+  _SetData({required this.wCtrl, required this.sCtrl, required this.rCtrl});
+
+  factory _SetData.empty() => _SetData(
+    wCtrl: TextEditingController(),
+    sCtrl: TextEditingController(text: '3'),
+    rCtrl: TextEditingController(text: '5'),
+  );
+
+  void dispose() { wCtrl.dispose(); sCtrl.dispose(); rCtrl.dispose(); }
+}
+
+// ────────────────────────────────────────
+// SEPARATE StatefulWidget for each exercise card
+// This is the KEY fix: setState within this widget
+// does NOT rebuild sibling exercise cards or their TextFields
+// ────────────────────────────────────────
+class _ExerciseCard extends StatefulWidget {
+  final _ExData data;
+  final List<String> mainLifts;
+  final Map<String, List<String>> secondaryLifts;
+  final List<String> allSecondaryLifts;
+  final bool canDelete;
+  final VoidCallback onDelete;
+
+  const _ExerciseCard({
+    super.key,
+    required this.data,
+    required this.mainLifts,
+    required this.secondaryLifts,
+    required this.allSecondaryLifts,
+    required this.canDelete,
+    required this.onDelete,
+  });
+
+  @override
+  State<_ExerciseCard> createState() => _ExerciseCardState();
+}
+
+class _ExerciseCardState extends State<_ExerciseCard> {
+  _ExData get d => widget.data;
+
+  Color get _color {
+    switch (d.category) {
+      case 'main': return AppTheme.accentRed;
+      case 'secondary': return AppTheme.accentBlue;
+      default: return AppTheme.accentGreen;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.bg900,
+        borderRadius: BorderRadius.circular(12),
+        border: Border(left: BorderSide(color: _color, width: 3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // Header: exercise picker + %RM + delete
+          Row(children: [
+            Expanded(child: _buildNamePicker()),
+            if (d.category == 'main') ...[
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 60,
+                child: TextField(
+                  controller: d.pctCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _color),
+                  decoration: InputDecoration(
+                    hintText: '%RM',
+                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.text600),
+                    filled: true, fillColor: AppTheme.bg800,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+            ],
+            if (widget.canDelete)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18, color: AppTheme.text600),
+                onPressed: widget.onDelete,
+                padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+              ),
+          ]),
+          const SizedBox(height: 10),
+
+          // Column headers
+          const Padding(
+            padding: EdgeInsets.only(left: 30),
+            child: Row(children: [
+              Expanded(flex: 3, child: Text('Wt (kg)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.text600))),
+              SizedBox(width: 6),
+              Expanded(flex: 2, child: Text('Sets', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.text600))),
+              SizedBox(width: 6),
+              Expanded(flex: 2, child: Text('Reps', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.text600))),
+              SizedBox(width: 32),
+            ]),
+          ),
+          const SizedBox(height: 4),
+
+          // Set rows
+          ...d.sets.asMap().entries.map((e) => _buildSetRow(e.key, e.value)),
+
+          // Add set
+          GestureDetector(
+            onTap: () {
+              final lastW = d.sets.isNotEmpty ? d.sets.last.wCtrl.text : '';
+              setState(() => d.sets.add(_SetData(
+                wCtrl: TextEditingController(text: lastW),
+                sCtrl: TextEditingController(text: '1'),
+                rCtrl: TextEditingController(),
+              )));
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(children: [
+                Icon(Icons.add_circle_outline, size: 16, color: _color),
+                const SizedBox(width: 6),
+                Text('Add Set', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _color)),
+              ]),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildNamePicker() {
+    if (d.category == 'main') {
+      return DropdownButtonFormField<String>(
+        value: widget.mainLifts.contains(d.name) ? d.name : null,
+        hint: const Text('Select lift', style: TextStyle(color: AppTheme.text500, fontSize: 14)),
+        isExpanded: true,
+        decoration: const InputDecoration.collapsed(hintText: ''),
+        dropdownColor: AppTheme.bg850,
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _color),
+        items: widget.mainLifts.map((l) => DropdownMenuItem(value: l,
+            child: Text(l, style: TextStyle(color: _color, fontWeight: FontWeight.w800)))).toList(),
+        onChanged: (v) => setState(() => d.name = v ?? ''),
+      );
+    }
+    if (d.category == 'secondary') {
+      return DropdownButtonFormField<String>(
+        value: widget.allSecondaryLifts.contains(d.name) ? d.name : null,
+        hint: const Text('Select variation', style: TextStyle(color: AppTheme.text500, fontSize: 14)),
+        isExpanded: true,
+        decoration: const InputDecoration.collapsed(hintText: ''),
+        dropdownColor: AppTheme.bg850,
+        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _color),
+        items: widget.secondaryLifts.entries.expand((e) => [
+          DropdownMenuItem(enabled: false, value: '__${e.key}',
+              child: Text('── ${e.key} ──', style: TextStyle(fontSize: 11, color: _color.withValues(alpha: 0.5), fontWeight: FontWeight.w800))),
+          ...e.value.map((v) => DropdownMenuItem(value: v, child: Text(v))),
+        ]).toList(),
+        onChanged: (v) { if (v != null && !v.startsWith('__')) setState(() => d.name = v); },
+      );
+    }
+    // Accessory: free text
+    return TextField(
+      decoration: InputDecoration.collapsed(hintText: 'Exercise name', hintStyle: TextStyle(color: AppTheme.text500)),
+      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _color),
+      controller: TextEditingController(text: d.name)..selection = TextSelection.collapsed(offset: d.name.length),
+      onChanged: (v) => d.name = v,
+    );
+  }
+
+  Widget _buildSetRow(int idx, _SetData s) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(children: [
+        // Set number
+        Container(
+          width: 24, height: 24,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: _color.withValues(alpha: 0.15)),
+          child: Center(child: Text('${idx + 1}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _color))),
+        ),
+        const SizedBox(width: 6),
+        Expanded(flex: 3, child: _inputField(s.wCtrl, '0', decimal: true)),
+        const SizedBox(width: 6),
+        Expanded(flex: 2, child: _inputField(s.sCtrl, '3')),
+        const SizedBox(width: 6),
+        Expanded(flex: 2, child: _inputField(s.rCtrl, '5')),
+        SizedBox(
+          width: 32,
+          child: d.sets.length > 1
+              ? IconButton(
+                  icon: const Icon(Icons.remove, size: 16, color: AppTheme.text600),
+                  onPressed: () => setState(() { s.dispose(); d.sets.removeAt(idx); }),
+                  padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+                )
+              : const SizedBox(),
+        ),
+      ]),
+    );
+  }
+
+  Widget _inputField(TextEditingController ctrl, String hint, {bool decimal = false}) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: decimal ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.number,
+      inputFormatters: decimal
+          ? [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))]
+          : [FilteringTextInputFormatter.digitsOnly],
+      textAlign: TextAlign.center,
+      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _color, fontFamily: 'monospace'),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(fontSize: 16, color: AppTheme.text700),
+        filled: true, fillColor: AppTheme.bg850,
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: _color.withValues(alpha: 0.4), width: 1.5),
+        ),
+      ),
+    );
   }
 }
