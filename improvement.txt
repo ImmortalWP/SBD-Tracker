@@ -1,3 +1,1 @@
-in the flutter app
-
-sometimes i train the squats on different %rm and bench on different %rm in same session. so i think in log we should change it %rm for each main life rather as a whole and make the %rm field optional. In home page the personal record card is not same and algined. Make all of them same even though these is diffeerence in the number. same on the profile page the total weight card is not properly aligned with other card. Add the timer in the log session to track the total workput duration. Also add the volume progression grpah in the analytics section
+Error while loggin the workout . Make the home Recent session more clean and clear and easier to understand in the next session of another week. 

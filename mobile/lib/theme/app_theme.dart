@@ -13,6 +13,8 @@ class AppTheme {
   static const Color text300 = Color(0xFFd4d4d8);
   static const Color text400 = Color(0xFFa1a1aa);
   static const Color text500 = Color(0xFF71717a);
+  static const Color text600 = Color(0xFF52525b);
+  static const Color text700 = Color(0xFF3f3f46);
   static const Color accentRed = Color(0xFFef4444);
   static const Color accentAmber = Color(0xFFf59e0b);
   static const Color accentGreen = Color(0xFF22c55e);
