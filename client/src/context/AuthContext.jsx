@@ -11,6 +11,7 @@ export function useAuth() {
 function parseToken(token) {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
+    // Check if expired
     if (payload.exp * 1000 < Date.now()) return null;
     return { userId: payload.userId, username: payload.username };
   } catch {
@@ -19,9 +20,9 @@ function parseToken(token) {
 }
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('sl_token'));
+  const [token, setToken] = useState(() => localStorage.getItem('sbd_token'));
   const [user, setUser] = useState(() => {
-    const t = localStorage.getItem('sl_token');
+    const t = localStorage.getItem('sbd_token');
     return t ? parseToken(t) : null;
   });
 
@@ -29,21 +30,27 @@ export function AuthProvider({ children }) {
     if (token) {
       const parsed = parseToken(token);
       if (parsed) {
-        localStorage.setItem('sl_token', token);
+        localStorage.setItem('sbd_token', token);
         setUser(parsed);
       } else {
-        localStorage.removeItem('sl_token');
+        // Token expired or invalid
+        localStorage.removeItem('sbd_token');
         setToken(null);
         setUser(null);
       }
     } else {
-      localStorage.removeItem('sl_token');
+      localStorage.removeItem('sbd_token');
       setUser(null);
     }
   }, [token]);
 
-  const login = (newToken) => setToken(newToken);
-  const logout = () => setToken(null);
+  const login = (newToken) => {
+    setToken(newToken);
+  };
+
+  const logout = () => {
+    setToken(null);
+  };
 
   return (
     <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!user }}>
