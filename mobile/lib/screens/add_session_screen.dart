@@ -41,6 +41,16 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
 
   List<String> get _allSecondaryLifts => _secondaryLifts.values.expand((e) => e).toList();
 
+  static const Map<String, List<String>> _accessoryLifts = {
+    'Back': ['Barbell Row', 'Pendlay Row', 'Lat Pulldown', 'Pull Up', 'Chin Up', 'Cable Row', 'Dumbbell Row', 'T-Bar Row', 'Face Pull'],
+    'Shoulders': ['OHP', 'Dumbbell Press', 'Lateral Raise', 'Rear Delt Fly', 'Front Raise', 'Arnold Press'],
+    'Arms': ['Barbell Curl', 'Dumbbell Curl', 'Hammer Curl', 'Tricep Pushdown', 'Skull Crusher', 'Close Grip Press', 'Overhead Extension'],
+    'Legs': ['Leg Press', 'Leg Extension', 'Leg Curl', 'Bulgarian Split Squat', 'Lunges', 'Hip Thrust', 'Calf Raise', 'Good Morning'],
+    'Core': ['Plank', 'Ab Wheel', 'Cable Crunch', 'Hanging Leg Raise', 'Russian Twist'],
+  };
+
+  List<String> get _allAccessoryLifts => _accessoryLifts.values.expand((e) => e).toList();
+
   // Each exercise: { name, category, pctCtrl, sets: [ {wCtrl, sCtrl, rCtrl} ] }
   final List<_ExData> _exercises = [];
 
@@ -306,6 +316,8 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
                   data: entry.value,
                   mainLifts: _mainLifts,
                   secondaryLifts: _secondaryLifts,
+                  accessoryLifts: _accessoryLifts,
+                  allAccessoryLifts: _allAccessoryLifts,
                   allSecondaryLifts: _allSecondaryLifts,
                   canDelete: _exercises.length > 1,
                   onDelete: () => setState(() {
@@ -535,6 +547,8 @@ class _ExerciseCard extends StatefulWidget {
   final List<String> mainLifts;
   final Map<String, List<String>> secondaryLifts;
   final List<String> allSecondaryLifts;
+  final Map<String, List<String>> accessoryLifts;
+  final List<String> allAccessoryLifts;
   final bool canDelete;
   final VoidCallback onDelete;
 
@@ -544,6 +558,8 @@ class _ExerciseCard extends StatefulWidget {
     required this.mainLifts,
     required this.secondaryLifts,
     required this.allSecondaryLifts,
+    required this.accessoryLifts,
+    required this.allAccessoryLifts,
     required this.canDelete,
     required this.onDelete,
   });
@@ -678,13 +694,50 @@ class _ExerciseCardState extends State<_ExerciseCard> {
         onChanged: (v) { if (v != null && !v.startsWith('__')) setState(() => d.name = v); },
       );
     }
-    // Accessory: free text
-    return TextField(
-      decoration: InputDecoration.collapsed(hintText: 'Exercise name', hintStyle: TextStyle(color: AppTheme.text500)),
-      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _color),
-      controller: TextEditingController(text: d.name)..selection = TextSelection.collapsed(offset: d.name.length),
-      onChanged: (v) => d.name = v,
-    );
+    // Accessory: grouped dropdown with custom option
+    final isKnown = widget.allAccessoryLifts.contains(d.name);
+    final isCustom = d.name.isNotEmpty && !isKnown && d.name != '__custom__';
+    return isCustom
+        ? Row(children: [
+            Expanded(
+              child: TextField(
+                decoration: InputDecoration.collapsed(hintText: 'Exercise name', hintStyle: TextStyle(color: AppTheme.text500)),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _color),
+                controller: TextEditingController(text: d.name)..selection = TextSelection.collapsed(offset: d.name.length),
+                onChanged: (v) => d.name = v,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.list, size: 18, color: AppTheme.text500),
+              onPressed: () => setState(() => d.name = ''),
+              padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+              tooltip: 'Switch to dropdown',
+            ),
+          ])
+        : DropdownButtonFormField<String>(
+            value: isKnown ? d.name : null,
+            hint: const Text('Select exercise', style: TextStyle(color: AppTheme.text500, fontSize: 14)),
+            isExpanded: true,
+            decoration: const InputDecoration.collapsed(hintText: ''),
+            dropdownColor: AppTheme.bg850,
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _color),
+            items: [
+              ...widget.accessoryLifts.entries.expand((e) => [
+                DropdownMenuItem(enabled: false, value: '__hdr_${e.key}',
+                    child: Text('── ${e.key} ──', style: TextStyle(fontSize: 11, color: _color.withValues(alpha: 0.5), fontWeight: FontWeight.w800))),
+                ...e.value.map((v) => DropdownMenuItem(value: v, child: Text(v))),
+              ]),
+              const DropdownMenuItem(value: '__custom__',
+                  child: Text('✏️  Type custom...', style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic))),
+            ],
+            onChanged: (v) {
+              if (v == '__custom__') {
+                setState(() => d.name = ' ');  // trigger text field mode
+              } else if (v != null && !v.startsWith('__')) {
+                setState(() => d.name = v);
+              }
+            },
+          );
   }
 
   Widget _buildSetRow(int idx, _SetData s) {
