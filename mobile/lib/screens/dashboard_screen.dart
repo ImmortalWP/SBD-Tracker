@@ -245,8 +245,8 @@ class _ExpandableSessionState extends State<_ExpandableSession> {
   @override
   Widget build(BuildContext context) {
     final exercises = s['exercises'] as List? ?? [];
-    final mainLifts = exercises.where((e) => e['category'] == 'main').toList();
-    final others = exercises.where((e) => e['category'] != 'main').toList();
+    final keyLifts = exercises.where((e) => e['category'] == 'main' || e['category'] == 'secondary').toList();
+    final accessories = exercises.where((e) => e['category'] != 'main' && e['category'] != 'secondary').toList();
 
     String? dateStr;
     try { dateStr = DateFormat('MMM d').format(DateTime.parse(s['date'])); } catch (_) {}
@@ -279,33 +279,34 @@ class _ExpandableSessionState extends State<_ExpandableSession> {
                 )),
               ),
               const SizedBox(width: 10),
-              // Summary text
+              // Summary text — show main + secondary lifts
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      mainLifts.map((e) => e['name']).join(' / '),
+                      keyLifts.map((e) => e['name']).join(' / '),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Row(children: [
                       if (dateStr != null) Text('$dateStr  ', style: const TextStyle(fontSize: 11, color: AppTheme.text500)),
-                      if (others.isNotEmpty) Text('+ ${others.length} more', style: const TextStyle(fontSize: 11, color: AppTheme.text600)),
+                      if (accessories.isNotEmpty) Text('+ ${accessories.length} accessory', style: const TextStyle(fontSize: 11, color: AppTheme.text600)),
                     ]),
                   ],
                 ),
               ),
-              // Quick weight summary for main lifts
-              ...mainLifts.take(2).map((ex) {
-                final topSet = (ex['sets'] as List? ?? []).isNotEmpty ? (ex['sets'] as List).first : null;
-                if (topSet == null) return const SizedBox();
+              // Quick weight summary — show HIGHEST weight per lift
+              ...keyLifts.where((e) => e['category'] == 'main').take(2).map((ex) {
+                final sets = (ex['sets'] as List? ?? []);
+                if (sets.isEmpty) return const SizedBox();
+                final maxWeight = sets.fold<num>(0, (max, s) => ((s['weight'] as num?) ?? 0) > max ? (s['weight'] as num) : max);
                 return Container(
                   margin: const EdgeInsets.only(left: 4),
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(color: AppTheme.bg800, borderRadius: BorderRadius.circular(5)),
-                  child: Text('${topSet['weight']}kg', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text300, fontFamily: 'monospace')),
+                  child: Text('${maxWeight}kg', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text300, fontFamily: 'monospace')),
                 );
               }),
               const SizedBox(width: 4),
