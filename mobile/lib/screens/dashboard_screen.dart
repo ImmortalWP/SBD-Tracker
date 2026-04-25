@@ -297,16 +297,24 @@ class _ExpandableSessionState extends State<_ExpandableSession> {
                   ],
                 ),
               ),
-              // Quick weight summary — show HIGHEST weight per lift
-              ...keyLifts.where((e) => e['category'] == 'main').take(2).map((ex) {
+              // Quick weight summary — show HIGHEST weight per exercise (main, secondary & accessories)
+              ...exercises.map((ex) {
                 final sets = (ex['sets'] as List? ?? []);
                 if (sets.isEmpty) return const SizedBox();
                 final maxWeight = sets.fold<num>(0, (max, s) => ((s['weight'] as num?) ?? 0) > max ? (s['weight'] as num) : max);
+                if (maxWeight <= 0) return const SizedBox();
+                final color = ex['category'] == 'main' ? AppTheme.accentRed
+                    : ex['category'] == 'secondary' ? AppTheme.accentBlue
+                    : AppTheme.accentGreen;
                 return Container(
                   margin: const EdgeInsets.only(left: 4),
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(color: AppTheme.bg800, borderRadius: BorderRadius.circular(5)),
-                  child: Text('${maxWeight}kg', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text300, fontFamily: 'monospace')),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(color: color.withValues(alpha: 0.2)),
+                  ),
+                  child: Text('${maxWeight}kg', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color, fontFamily: 'monospace')),
                 );
               }),
               const SizedBox(width: 4),
