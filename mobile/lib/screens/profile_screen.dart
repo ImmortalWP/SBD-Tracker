@@ -46,7 +46,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_profile != null) {
       if (_profile!['bodyWeight'] != null) _weightCtrl.text = _profile!['bodyWeight'].toString();
       if (_profile!['height'] != null) _heightCtrl.text = _profile!['height'].toString();
-      _weightClass = _profile!['weightClass'];
+      final wc = _profile!['weightClass'];
+      _weightClass = _classes.contains(wc) ? wc : null;
     }
   }
 
