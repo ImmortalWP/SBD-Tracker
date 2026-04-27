@@ -285,7 +285,7 @@ class _ExpandableSessionState extends State<_ExpandableSession> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      keyLifts.map((e) => e['name']).join(' / '),
+                      exercises.map((e) => e['name']).join(' / '),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -297,26 +297,35 @@ class _ExpandableSessionState extends State<_ExpandableSession> {
                   ],
                 ),
               ),
-              // Quick weight summary — show HIGHEST weight per exercise (main, secondary & accessories)
-              ...exercises.map((ex) {
-                final sets = (ex['sets'] as List? ?? []);
-                if (sets.isEmpty) return const SizedBox();
-                final maxWeight = sets.fold<num>(0, (max, s) => ((s['weight'] as num?) ?? 0) > max ? (s['weight'] as num) : max);
-                if (maxWeight <= 0) return const SizedBox();
-                final color = ex['category'] == 'main' ? AppTheme.accentRed
-                    : ex['category'] == 'secondary' ? AppTheme.accentBlue
-                    : AppTheme.accentGreen;
-                return Container(
-                  margin: const EdgeInsets.only(left: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(5),
-                    border: Border.all(color: color.withValues(alpha: 0.2)),
+              // Quick weight summary — show HIGHEST weight per exercise (main & secondary)
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  reverse: true, // Align elements to the right
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: keyLifts.map<Widget>((ex) {
+                      final sets = (ex['sets'] as List? ?? []);
+                      if (sets.isEmpty) return const SizedBox();
+                      final maxWeight = sets.fold<num>(0, (max, s) => ((s['weight'] as num?) ?? 0) > max ? (s['weight'] as num) : max);
+                      if (maxWeight <= 0) return const SizedBox();
+                      final color = ex['category'] == 'main' ? AppTheme.accentRed
+                          : ex['category'] == 'secondary' ? AppTheme.accentBlue
+                          : AppTheme.accentGreen;
+                      return Container(
+                        margin: const EdgeInsets.only(left: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(color: color.withValues(alpha: 0.2)),
+                        ),
+                        child: Text('${maxWeight}kg', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color, fontFamily: 'monospace')),
+                      );
+                    }).toList(),
                   ),
-                  child: Text('${maxWeight}kg', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color, fontFamily: 'monospace')),
-                );
-              }),
+                ),
+              ),
               const SizedBox(width: 4),
               Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 20, color: AppTheme.text600),
             ]),
