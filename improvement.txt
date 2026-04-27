@@ -1,3 +1,0 @@
-This is the SBD mobile app for tracking my powerlifting lifts. In the mobile app there is some problem, in the training log 
-it only shows the weight of the main lift but not the accessory lifts which are also part of my training. sp show the weight of 
-the accessory lifts as well in the training log in the home page.

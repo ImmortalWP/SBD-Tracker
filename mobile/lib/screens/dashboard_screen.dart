@@ -285,7 +285,7 @@ class _ExpandableSessionState extends State<_ExpandableSession> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      exercises.map((e) => e['name']).join(' / '),
+                      keyLifts.map((e) => e['name']).join(' / '),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -340,8 +340,8 @@ class _ExpandableSessionState extends State<_ExpandableSession> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // All exercises with full set details
-                ...exercises.map((ex) {
+                // Main and secondary exercises with full set details
+                ...keyLifts.map((ex) {
                   final color = ex['category'] == 'main' ? AppTheme.accentRed
                       : ex['category'] == 'secondary' ? AppTheme.accentBlue
                       : AppTheme.accentGreen;
