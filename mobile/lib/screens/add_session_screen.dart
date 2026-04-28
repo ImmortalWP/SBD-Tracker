@@ -15,7 +15,7 @@ class AddSessionScreen extends StatefulWidget {
   State<AddSessionScreen> createState() => _AddSessionScreenState();
 }
 
-class _AddSessionScreenState extends State<AddSessionScreen> {
+class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBindingObserver {
   final _blockCtrl = TextEditingController();
   final _weekCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
@@ -29,6 +29,10 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
   int _elapsedSeconds = 0;
   Timer? _timerTick;
   bool _timerRunning = false;
+  DateTime? _lastTickTime;
+
+  // Auto-save
+  Timer? _autoSaveTimer;
 
   final _days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   final _mainLifts = ['Squat', 'Bench', 'Deadlift'];
@@ -43,13 +47,15 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
 
   static const Map<String, List<String>> _accessoryLifts = {
     'Back': ['Barbell Row', 'Pendlay Row', 'Lat Pulldown', 'Pull Up', 'Chin Up', 'Cable Row', 'Dumbbell Row', 'T-Bar Row', 'Face Pull'],
-    'Shoulders': ['OHP', 'Dumbbell Press', 'Lateral Raise', 'Rear Delt Fly', 'Front Raise', 'Arnold Press'],
+    'Shoulders': ['OHP', 'Dumbbell Press', 'Lateral Raise', 'Rear Delt Fly', 'Front Raise'],
     'Arms': ['Barbell Curl', 'Dumbbell Curl', 'Hammer Curl', 'Tricep Pushdown', 'Skull Crusher', 'Close Grip Press', 'Overhead Extension'],
-    'Legs': ['Leg Press', 'Leg Extension', 'Leg Curl', 'Bulgarian Split Squat', 'Lunges', 'Hip Thrust', 'Calf Raise', 'Good Morning'],
-    'Core': ['Plank', 'Ab Wheel', 'Cable Crunch', 'Hanging Leg Raise', 'Russian Twist'],
+    'Legs': ['Leg Press', 'Leg Extension', 'Leg Curl', 'Bulgarian Split Squat', 'Hip Thrust'],
+    'Core': ['Plank', 'Ab Wheel', 'Cable Crunch', 'Hanging Leg Raise'],
   };
 
   List<String> get _allAccessoryLifts => _accessoryLifts.values.expand((e) => e).toList();
+
+  List<String> _dynamicAccessories = [];
 
   // Each exercise: { name, category, pctCtrl, sets: [ {wCtrl, sCtrl, rCtrl} ] }
   final List<_ExData> _exercises = [];
@@ -59,11 +65,59 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (_isEditing) {
       _loadExisting();
     } else {
       _tryLoadDraft();
     }
+    // Auto-save draft every 5 seconds
+    if (!_isEditing) {
+      _autoSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) => _saveDraftSilent());
+    }
+    _fetchDynamicAccessories();
+  }
+
+  Future<void> _fetchDynamicAccessories() async {
+    try {
+      final sessions = await ApiService.getSessions();
+      final Set<String> uniqueAccessories = {};
+      for (final session in sessions) {
+        final exercises = session['exercises'] as List? ?? [];
+        for (final ex in exercises) {
+          if (ex['category'] == 'accessory' && ex['name'] != null) {
+            final name = ex['name'].toString().trim();
+            if (name.isNotEmpty) {
+              // Check case-insensitive
+              bool exists = uniqueAccessories.any((e) => e.toLowerCase() == name.toLowerCase());
+              bool inStatic = _allAccessoryLifts.any((e) => e.toLowerCase() == name.toLowerCase());
+              if (!exists && !inStatic) {
+                uniqueAccessories.add(name);
+              }
+            }
+          }
+        }
+      }
+      if (mounted && uniqueAccessories.isNotEmpty) {
+        setState(() {
+          _dynamicAccessories = uniqueAccessories.toList()..sort();
+        });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      if (!_isEditing) _saveDraftSilent();
+    }
+  }
+
+  void _saveDraftSilent() {
+    if (_isEditing) return;
+    final hasData = _blockCtrl.text.isNotEmpty || _exercises.any((e) => e.name.isNotEmpty);
+    if (hasData) _saveDraft();
   }
 
   void _loadExisting() {
@@ -107,12 +161,24 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
         _date = draft['date'] ?? _date;
         _notesCtrl.text = draft['notes'] ?? '';
         _elapsedSeconds = draft['elapsedSeconds'] ?? 0;
+        final wasRunning = draft['timerRunning'] == true;
+        final lastTickStr = draft['lastTickTime'];
+        
+        if (wasRunning && lastTickStr != null) {
+          final lastTick = DateTime.tryParse(lastTickStr);
+          if (lastTick != null) {
+            _elapsedSeconds += DateTime.now().difference(lastTick).inSeconds;
+          }
+          _startTimer();
+        } else if (wasRunning) {
+          _startTimer();
+        }
+
         final exList = draft['exercises'] as List? ?? [];
         for (final ex in exList) {
           _exercises.add(_ExData.fromMap(ex));
         }
         setState(() {});
-        _startTimer();
         return;
       }
     }
@@ -122,10 +188,87 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
     _startTimer();
   }
 
+  Future<void> _onDayChanged(String newDay) async {
+    setState(() => _day = newDay);
+    if (_isEditing) return; // Don't auto-load if editing an existing session
+
+    // Check if current session is empty
+    bool isEmpty = _exercises.isEmpty || (_exercises.length == 1 && _exercises.first.name.trim().isEmpty);
+
+    if (!isEmpty) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.bg850,
+          title: Text('Load $newDay Workout?'),
+          content: const Text('This will overwrite your current exercises with the most recent ones from this day.', style: TextStyle(color: AppTheme.text400)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: AppTheme.text500)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Load', style: TextStyle(color: AppTheme.accentGreen)),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+
+    setState(() => _loading = true);
+
+    try {
+      final sessions = await ApiService.getSessions(day: newDay);
+      if (sessions.isNotEmpty) {
+        sessions.sort((a, b) {
+          final da = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime(2000);
+          final db = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(2000);
+          return db.compareTo(da);
+        });
+
+        final mostRecent = sessions.first;
+        final exList = mostRecent['exercises'] as List? ?? [];
+        if (exList.isNotEmpty) {
+          for (final ex in _exercises) {
+            ex.dispose();
+          }
+          _exercises.clear();
+          
+          for (final ex in exList) {
+            _exercises.add(_ExData.fromMap(ex));
+          }
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Loaded previous $newDay workout'),
+              backgroundColor: AppTheme.accentGreen,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore errors silently
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   void _startTimer() {
     _timerRunning = true;
+    _lastTickTime = DateTime.now();
     _timerTick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _elapsedSeconds++);
+      final now = DateTime.now();
+      if (_lastTickTime != null) {
+        _elapsedSeconds += now.difference(_lastTickTime!).inSeconds;
+      } else {
+        _elapsedSeconds++;
+      }
+      _lastTickTime = now;
+      if (mounted) setState(() {});
     });
   }
 
@@ -133,6 +276,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
     if (_timerRunning) {
       _timerTick?.cancel();
       _timerRunning = false;
+      _lastTickTime = null;
     } else {
       _startTimer();
     }
@@ -148,13 +292,12 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
   // Save draft when going back
   Future<bool> _onWillPop() async {
     if (_isEditing) return true;
-    // Only save draft if something was entered
     final hasData = _blockCtrl.text.isNotEmpty || _exercises.any((e) => e.name.isNotEmpty);
     if (hasData) {
       await _saveDraft();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('💾 Session saved as draft — timer keeps running'),
+          content: Text('💾 Session saved as draft'),
           backgroundColor: AppTheme.accentAmber,
           behavior: SnackBarBehavior.floating,
           duration: Duration(seconds: 2),
@@ -162,6 +305,31 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
       }
     }
     return true;
+  }
+
+  Future<void> _discardDraft() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bg850,
+        title: const Text('Discard Session?'),
+        content: const Text('All entered data will be permanently lost.', style: TextStyle(color: AppTheme.text400)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.text500)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Discard', style: TextStyle(color: AppTheme.accentRed)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await DraftService.clearDraft();
+      if (mounted) Navigator.pop(context, false);
+    }
   }
 
   Future<void> _saveDraft() async {
@@ -172,6 +340,8 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
       'date': _date,
       'notes': _notesCtrl.text,
       'elapsedSeconds': _elapsedSeconds,
+      'timerRunning': _timerRunning,
+      'lastTickTime': _lastTickTime?.toIso8601String(),
       'exercises': _exercises.map((e) => e.toMap()).toList(),
     });
   }
@@ -275,6 +445,12 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
             if (shouldPop && mounted) Navigator.pop(context);
           }),
           actions: [
+            if (!_isEditing)
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: AppTheme.text500, size: 20),
+                tooltip: 'Discard session',
+                onPressed: _discardDraft,
+              ),
             TextButton(
               onPressed: _loading ? null : _submit,
               child: _loading
@@ -319,6 +495,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
                   accessoryLifts: _accessoryLifts,
                   allAccessoryLifts: _allAccessoryLifts,
                   allSecondaryLifts: _allSecondaryLifts,
+                  dynamicAccessories: _dynamicAccessories,
                   canDelete: _exercises.length > 1,
                   onDelete: () => setState(() {
                     entry.value.dispose();
@@ -397,7 +574,9 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
             dropdownColor: AppTheme.bg850,
             style: const TextStyle(fontSize: 15, color: AppTheme.text100, fontWeight: FontWeight.w600),
             items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
-            onChanged: (v) => _day = v ?? _day,
+            onChanged: (v) {
+              if (v != null) _onDayChanged(v);
+            },
           ),
         ),
         const SizedBox(width: 10),
@@ -458,6 +637,10 @@ class _AddSessionScreenState extends State<AddSessionScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autoSaveTimer?.cancel();
+    // Final safety-net save on dispose
+    if (!_isEditing) _saveDraftSilent();
     _blockCtrl.dispose();
     _weekCtrl.dispose();
     _notesCtrl.dispose();
@@ -549,6 +732,7 @@ class _ExerciseCard extends StatefulWidget {
   final List<String> allSecondaryLifts;
   final Map<String, List<String>> accessoryLifts;
   final List<String> allAccessoryLifts;
+  final List<String> dynamicAccessories;
   final bool canDelete;
   final VoidCallback onDelete;
 
@@ -560,6 +744,7 @@ class _ExerciseCard extends StatefulWidget {
     required this.allSecondaryLifts,
     required this.accessoryLifts,
     required this.allAccessoryLifts,
+    required this.dynamicAccessories,
     required this.canDelete,
     required this.onDelete,
   });
@@ -594,7 +779,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           // Header: exercise picker + %RM + delete
           Row(children: [
             Expanded(child: _buildNamePicker()),
-            if (d.category == 'main') ...[
+            if (d.category == 'main' || d.category == 'secondary') ...[
               const SizedBox(width: 8),
               SizedBox(
                 width: 60,
@@ -695,7 +880,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
       );
     }
     // Accessory: grouped dropdown with custom option
-    final isKnown = widget.allAccessoryLifts.contains(d.name);
+    final isKnown = widget.allAccessoryLifts.contains(d.name) || widget.dynamicAccessories.contains(d.name);
     final isCustom = d.name.isNotEmpty && !isKnown && d.name != '__custom__';
     return isCustom
         ? Row(children: [
@@ -727,6 +912,11 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                     child: Text('── ${e.key} ──', style: TextStyle(fontSize: 11, color: _color.withValues(alpha: 0.5), fontWeight: FontWeight.w800))),
                 ...e.value.map((v) => DropdownMenuItem(value: v, child: Text(v))),
               ]),
+              if (widget.dynamicAccessories.isNotEmpty) ...[
+                const DropdownMenuItem(enabled: false, value: '__hdr_History',
+                    child: Text('── Recent ──', style: TextStyle(fontSize: 11, color: AppTheme.accentGreen, fontWeight: FontWeight.w800))),
+                ...widget.dynamicAccessories.map((v) => DropdownMenuItem(value: v, child: Text(v))),
+              ],
               const DropdownMenuItem(value: '__custom__',
                   child: Text('✏️  Type custom...', style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic))),
             ],

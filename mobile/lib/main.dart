@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'services/auth_service.dart';
 import 'services/offline_queue.dart';
+import 'services/draft_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/sessions_screen.dart';
@@ -58,6 +59,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
   int _pendingSync = 0;
+  bool _hasDraft = false;
   Timer? _syncTimer;
 
   final _screens = const [
@@ -74,6 +76,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkQueue();
+    _checkDraft();
     // Periodically try to sync
     _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) => _trySync());
   }
@@ -89,7 +92,13 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _trySync();
+      _checkDraft();
     }
+  }
+
+  Future<void> _checkDraft() async {
+    final has = await DraftService.hasDraft();
+    if (mounted) setState(() => _hasDraft = has);
   }
 
   Future<void> _checkQueue() async {
@@ -155,6 +164,54 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                 ],
               ),
             ),
+            // Draft-in-progress banner
+            if (_hasDraft)
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AddSessionScreen()),
+                  ).then((result) {
+                    _checkDraft();
+                    if (result == true) {
+                      _checkQueue();
+                      setState(() {});
+                    }
+                  });
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [
+                      AppTheme.accentAmber.withValues(alpha: 0.15),
+                      AppTheme.accentRed.withValues(alpha: 0.10),
+                    ]),
+                    border: const Border(top: BorderSide(color: AppTheme.bg800, width: 0.5)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 8, height: 8,
+                        decoration: const BoxDecoration(shape: BoxShape.circle, color: AppTheme.accentAmber),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Draft in progress',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.accentAmber),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        '— tap to resume',
+                        style: TextStyle(fontSize: 12, color: AppTheme.text500),
+                      ),
+                      const Spacer(),
+                      const Icon(Icons.arrow_forward_ios, size: 12, color: AppTheme.accentAmber),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -170,6 +227,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                 context,
                 MaterialPageRoute(builder: (_) => const AddSessionScreen()),
               ).then((result) {
+                _checkDraft();
                 if (result == true) {
                   _checkQueue();
                   setState(() {});
