@@ -53,11 +53,17 @@ class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  State<MainShell> createState() => MainShellState();
 }
 
-class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
+class MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
+
+  void switchTab(int index) {
+    if (mounted) {
+      setState(() => _currentIndex = index);
+    }
+  }
   int _pendingSync = 0;
   bool _hasDraft = false;
   Timer? _syncTimer;

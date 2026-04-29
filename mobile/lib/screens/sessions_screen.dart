@@ -37,6 +37,14 @@ class _SessionsScreenState extends State<SessionsScreen> {
   Future<void> _loadData() async {
     try {
       final sessions = await ApiService.getSessions();
+      
+      // Sort globally by date descending
+      sessions.sort((a, b) {
+        final da = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime(2000);
+        final db = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(2000);
+        return db.compareTo(da);
+      });
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('cache_sessions', jsonEncode(sessions));
       if (mounted) setState(() { _sessions = sessions; _loading = false; });
@@ -45,84 +53,66 @@ class _SessionsScreenState extends State<SessionsScreen> {
     }
   }
 
-  // Group sessions by block
   Map<int, List<dynamic>> _groupByBlock() {
     final map = <int, List<dynamic>>{};
     for (final s in _sessions) {
       final block = s['block'] as int;
       map.putIfAbsent(block, () => []).add(s);
     }
-    return Map.fromEntries(map.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+    return Map.fromEntries(map.entries.toList()..sort((a, b) => b.key.compareTo(a.key))); // sort blocks descending
   }
 
   @override
   Widget build(BuildContext context) {
     final grouped = _groupByBlock();
 
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      color: AppTheme.accentRed,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Header
-          Text('Training Log',
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppTheme.text50)),
-          const SizedBox(height: 2),
-          Text('${_sessions.length} session${_sessions.length != 1 ? 's' : ''} found',
-              style: const TextStyle(fontSize: 13, color: AppTheme.text400)),
-          const SizedBox(height: 16),
+    return Scaffold(
+      backgroundColor: AppTheme.bg950,
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadData,
+          color: AppTheme.accentRed,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+            children: [
+              const Text('Training Log', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.text50)),
+              const SizedBox(height: 6),
+              Text('${_sessions.length} session${_sessions.length != 1 ? 's' : ''} found',
+                  style: const TextStyle(fontSize: 14, color: AppTheme.text500)),
+              const SizedBox(height: 24),
 
-          if (_loading)
-            ...List.generate(3, (_) => Container(
-              height: 100,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: AppTheme.bg850,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.bg800),
-              ),
-            ))
-          else if (_sessions.isEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  children: [
-                    const Text('📋', style: TextStyle(fontSize: 40)),
-                    const SizedBox(height: 8),
-                    const Text('No sessions logged yet.', style: TextStyle(color: AppTheme.text400, fontSize: 13)),
-                  ],
-                ),
-              ),
-            )
-          else
-            ...grouped.entries.expand((entry) => [
-              // Block header
-              Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 10),
-                child: Row(
-                  children: [
-                    Text('Block ${entry.key}',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.text100)),
-                    const SizedBox(width: 12),
-                    Expanded(child: Container(height: 1, color: AppTheme.bg800)),
-                    const SizedBox(width: 12),
-                    Text('${entry.value.length} session${entry.value.length != 1 ? 's' : ''}',
-                        style: const TextStyle(fontSize: 11, color: AppTheme.text500)),
-                  ],
-                ),
-              ),
-              ...entry.value.map((s) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: SessionCard(
-                  session: s,
-                  onDelete: (id) => setState(() => _sessions.removeWhere((s) => s['_id'] == id)),
-                  onRefresh: _loadData,
-                ),
-              )),
-            ]),
-        ],
+              if (_loading && _sessions.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Center(child: CircularProgressIndicator(color: AppTheme.text500, strokeWidth: 2)),
+                )
+              else if (_sessions.isEmpty)
+                const Text('No sessions logged yet.', style: TextStyle(color: AppTheme.text500, fontSize: 14))
+              else
+                ...grouped.entries.expand((entry) => [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16, bottom: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Block ${entry.key}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.text100)),
+                        const SizedBox(height: 8),
+                        const Divider(color: AppTheme.bg850, height: 1),
+                      ],
+                    ),
+                  ),
+                  ...entry.value.map((s) => Padding(
+                    padding: const EdgeInsets.only(bottom: 32),
+                    child: SessionCard(
+                      session: s,
+                      onDelete: (id) => setState(() => _sessions.removeWhere((s) => s['_id'] == id)),
+                      onRefresh: _loadData,
+                    ),
+                  )),
+                ]),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -466,10 +466,6 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Timer
-                if (!_isEditing) _buildTimer(),
-                if (!_isEditing) const SizedBox(height: 14),
-
                 if (_error.isNotEmpty) ...[
                   Container(
                     padding: const EdgeInsets.all(10),
@@ -479,12 +475,8 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
                   const SizedBox(height: 12),
                 ],
 
-                // Meta fields
-                _buildMetaFields(),
-                const SizedBox(height: 16),
-
-                const Text('EXERCISES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text500, letterSpacing: 1)),
-                const SizedBox(height: 8),
+                _buildMetaRow(),
+                const SizedBox(height: 32),
 
                 // Each exercise as its own StatefulWidget - this is the key fix
                 ..._exercises.asMap().entries.map((entry) => _ExerciseCard(
@@ -529,78 +521,117 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     );
   }
 
-  Widget _buildTimer() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [AppTheme.accentRed.withValues(alpha: 0.1), Colors.transparent]),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.15)),
-      ),
-      child: Row(children: [
-        const Icon(Icons.timer_outlined, color: AppTheme.accentRed, size: 20),
-        const SizedBox(width: 10),
-        Text(_timerDisplay, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppTheme.text100, fontFamily: 'monospace', letterSpacing: 2)),
-        const Spacer(),
-        GestureDetector(
-          onTap: _toggleTimer,
-          child: Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _timerRunning ? AppTheme.accentRed.withValues(alpha: 0.15) : AppTheme.accentGreen.withValues(alpha: 0.15),
+  Widget _buildMetaRow() {
+    String metaText = 'Block ${_blockCtrl.text.isEmpty ? '-' : _blockCtrl.text} • '
+        'Week ${_weekCtrl.text.isEmpty ? '-' : _weekCtrl.text} • '
+        '${_day ?? 'Day'} • $_date';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (!_isEditing) ...[
+          GestureDetector(
+            onTap: _toggleTimer,
+            child: Text(
+              _timerDisplay,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: _timerRunning ? AppTheme.accentGreen : AppTheme.text500,
+                fontFamily: 'monospace',
+              ),
             ),
-            child: Icon(_timerRunning ? Icons.pause : Icons.play_arrow,
-                color: _timerRunning ? AppTheme.accentRed : AppTheme.accentGreen, size: 20),
+          ),
+          const SizedBox(width: 8),
+          const Text('•', style: TextStyle(color: AppTheme.text600)),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: GestureDetector(
+            onTap: _showMetaEditDialog,
+            child: Text(
+              metaText,
+              style: const TextStyle(fontSize: 14, color: AppTheme.text400, fontWeight: FontWeight.w500),
+            ),
           ),
         ),
-      ]),
+      ],
     );
   }
 
-  Widget _buildMetaFields() {
-    return Column(children: [
-      Row(children: [
-        Expanded(child: _numField(_blockCtrl, 'Block')),
-        const SizedBox(width: 10),
-        Expanded(child: _numField(_weekCtrl, 'Week')),
-      ]),
-      const SizedBox(height: 10),
-      Row(children: [
-        Expanded(
-          child: DropdownButtonFormField<String>(
-            value: _day,
-            decoration: _deco('Day'),
-            dropdownColor: AppTheme.bg850,
-            style: const TextStyle(fontSize: 15, color: AppTheme.text100, fontWeight: FontWeight.w600),
-            items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
-            onChanged: (v) {
-              if (v != null) _onDayChanged(v);
-            },
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: GestureDetector(
-            onTap: () async {
-              final picked = await showDatePicker(context: context,
-                  initialDate: DateTime.tryParse(_date) ?? DateTime.now(),
-                  firstDate: DateTime(2020), lastDate: DateTime(2030));
-              if (picked != null) setState(() => _date = DateFormat('yyyy-MM-dd').format(picked));
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-              decoration: BoxDecoration(color: AppTheme.bg850, borderRadius: BorderRadius.circular(10)),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Date', style: TextStyle(fontSize: 11, color: AppTheme.text500)),
-                const SizedBox(height: 2),
-                Text(_date, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text100)),
-              ]),
+  void _showMetaEditDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.bg900,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Edit Session Details', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.text100)),
+            const SizedBox(height: 20),
+            Row(children: [
+              Expanded(child: _numField(_blockCtrl, 'Block')),
+              const SizedBox(width: 10),
+              Expanded(child: _numField(_weekCtrl, 'Week')),
+            ]),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _day,
+              decoration: _deco('Day'),
+              dropdownColor: AppTheme.bg850,
+              style: const TextStyle(fontSize: 15, color: AppTheme.text100, fontWeight: FontWeight.w600),
+              items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  _onDayChanged(v);
+                  setState(() {});
+                }
+              },
             ),
-          ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () async {
+                final picked = await showDatePicker(
+                    context: context,
+                    initialDate: DateTime.tryParse(_date) ?? DateTime.now(),
+                    firstDate: DateTime(2020), lastDate: DateTime(2030));
+                if (picked != null) {
+                  setState(() {
+                    _date = DateFormat('yyyy-MM-dd').format(picked);
+                  });
+                }
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                decoration: BoxDecoration(color: AppTheme.bg850, borderRadius: BorderRadius.circular(10)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Date', style: TextStyle(fontSize: 11, color: AppTheme.text500)),
+                  const SizedBox(height: 2),
+                  Text(_date, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text100)),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accentRed, padding: const EdgeInsets.symmetric(vertical: 14)),
+                onPressed: () {
+                  setState(() {});
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
         ),
-      ]),
-    ]);
+      ),
+    );
   }
 
   Widget _numField(TextEditingController ctrl, String label) {
@@ -766,86 +797,91 @@ class _ExerciseCardState extends State<_ExerciseCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: AppTheme.bg900,
-        borderRadius: BorderRadius.circular(12),
-        border: Border(left: BorderSide(color: _color, width: 3)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 10, 6),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Header: exercise picker + %RM + delete
-          Row(children: [
-            Expanded(child: _buildNamePicker()),
-            if (d.category == 'main' || d.category == 'secondary') ...[
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 60,
-                child: TextField(
-                  controller: d.pctCtrl,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _color),
-                  decoration: InputDecoration(
-                    hintText: '%RM',
-                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.text600),
-                    filled: true, fillColor: AppTheme.bg800,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                  ),
-                ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 32),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Header row
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildNamePicker(),
+                  if (d.category == 'main' || d.category == 'secondary') ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 40,
+                          child: TextField(
+                            controller: d.pctCtrl,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            style: const TextStyle(fontSize: 14, color: AppTheme.text400, fontWeight: FontWeight.w600),
+                            decoration: const InputDecoration(
+                              hintText: '%RM',
+                              hintStyle: TextStyle(fontSize: 14, color: AppTheme.text600),
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ),
+                        const Text('%', style: TextStyle(fontSize: 14, color: AppTheme.text600)),
+                      ],
+                    ),
+                  ],
+                ],
               ),
-            ],
+            ),
             if (widget.canDelete)
               IconButton(
-                icon: const Icon(Icons.close, size: 18, color: AppTheme.text600),
+                icon: const Icon(Icons.close, size: 20, color: AppTheme.text600),
                 onPressed: widget.onDelete,
                 padding: EdgeInsets.zero, constraints: const BoxConstraints(),
               ),
-          ]),
-          const SizedBox(height: 10),
+        ]),
+        const SizedBox(height: 16),
 
-          // Column headers
-          const Padding(
-            padding: EdgeInsets.only(left: 30),
+        // Column headers
+        const Padding(
+          padding: EdgeInsets.only(left: 30),
+          child: Row(children: [
+            Expanded(flex: 3, child: Text('Wt (kg)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text500))),
+            SizedBox(width: 6),
+            Expanded(flex: 2, child: Text('Sets', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text500))),
+            SizedBox(width: 6),
+            Expanded(flex: 2, child: Text('Reps', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text500))),
+            SizedBox(width: 32),
+          ]),
+        ),
+        const SizedBox(height: 8),
+
+        // Set rows
+        ...d.sets.asMap().entries.map((e) => _buildSetRow(e.key, e.value)),
+
+        // Add set
+        GestureDetector(
+          onTap: () {
+            final lastW = d.sets.isNotEmpty ? d.sets.last.wCtrl.text : '';
+            setState(() => d.sets.add(_SetData(
+              wCtrl: TextEditingController(text: lastW),
+              sCtrl: TextEditingController(text: '1'),
+              rCtrl: TextEditingController(),
+            )));
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(children: [
-              Expanded(flex: 3, child: Text('Wt (kg)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.text600))),
-              SizedBox(width: 6),
-              Expanded(flex: 2, child: Text('Sets', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.text600))),
-              SizedBox(width: 6),
-              Expanded(flex: 2, child: Text('Reps', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.text600))),
-              SizedBox(width: 32),
+              Icon(Icons.add, size: 16, color: _color),
+              const SizedBox(width: 8),
+              Text('Add Set', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _color)),
             ]),
           ),
-          const SizedBox(height: 4),
-
-          // Set rows
-          ...d.sets.asMap().entries.map((e) => _buildSetRow(e.key, e.value)),
-
-          // Add set
-          GestureDetector(
-            onTap: () {
-              final lastW = d.sets.isNotEmpty ? d.sets.last.wCtrl.text : '';
-              setState(() => d.sets.add(_SetData(
-                wCtrl: TextEditingController(text: lastW),
-                sCtrl: TextEditingController(text: '1'),
-                rCtrl: TextEditingController(),
-              )));
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(children: [
-                Icon(Icons.add_circle_outline, size: 16, color: _color),
-                const SizedBox(width: 6),
-                Text('Add Set', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _color)),
-              ]),
-            ),
-          ),
-        ]),
-      ),
+        ),
+      ]),
     );
   }
 
@@ -932,13 +968,12 @@ class _ExerciseCardState extends State<_ExerciseCard> {
 
   Widget _buildSetRow(int idx, _SetData s) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(children: [
         // Set number
-        Container(
-          width: 24, height: 24,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: _color.withValues(alpha: 0.15)),
-          child: Center(child: Text('${idx + 1}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _color))),
+        SizedBox(
+          width: 24,
+          child: Center(child: Text('${idx + 1}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.text500))),
         ),
         const SizedBox(width: 6),
         Expanded(flex: 3, child: _inputField(s.wCtrl, '0', decimal: true)),
@@ -950,7 +985,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           width: 32,
           child: d.sets.length > 1
               ? IconButton(
-                  icon: const Icon(Icons.remove, size: 16, color: AppTheme.text600),
+                  icon: const Icon(Icons.remove, size: 18, color: AppTheme.text600),
                   onPressed: () => setState(() { s.dispose(); d.sets.removeAt(idx); }),
                   padding: EdgeInsets.zero, constraints: const BoxConstraints(),
                 )
@@ -968,17 +1003,15 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           ? [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))]
           : [FilteringTextInputFormatter.digitsOnly],
       textAlign: TextAlign.center,
-      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _color, fontFamily: 'monospace'),
+      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.text100, fontFamily: 'monospace'),
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(fontSize: 16, color: AppTheme.text700),
-        filled: true, fillColor: AppTheme.bg850,
-        contentPadding: const EdgeInsets.symmetric(vertical: 10),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: _color.withValues(alpha: 0.4), width: 1.5),
-        ),
+        border: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.bg800)),
+        enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.bg800)),
+        focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.text500)),
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        isDense: true,
       ),
     );
   }

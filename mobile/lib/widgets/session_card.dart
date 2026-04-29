@@ -20,10 +20,7 @@ class SessionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final exercises = session['exercises'] as List? ?? [];
-    final mainLifts = exercises.where((e) => e['category'] == 'main').toList();
-    final secondary = exercises.where((e) => e['category'] == 'secondary').toList();
-    final accessories = exercises.where((e) => e['category'] == 'accessory').toList();
-
+    
     String? formattedDate;
     if (session['date'] != null) {
       try {
@@ -32,227 +29,106 @@ class SessionCard extends StatelessWidget {
       } catch (_) {}
     }
 
-    return Card(
+    final day = session['day'] ?? 'Day';
+    final week = session['week'] != null ? 'Week ${session['week']}' : '';
+    final duration = session['duration'] != null && (session['duration'] as num) > 0 
+        ? '${session['duration']}min' : '';
+    
+    final metaParts = [
+      if (formattedDate != null) formattedDate else day,
+      if (week.isNotEmpty) week,
+      if (duration.isNotEmpty) duration,
+    ];
+    final metaString = metaParts.join(' • ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                metaString,
+                style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w500),
+              ),
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: AppTheme.text500, size: 20),
+              color: AppTheme.bg850,
+              padding: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              onSelected: (v) {
+                if (v == 'edit') _handleEdit(context);
+                if (v == 'delete') _handleDelete(context);
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, size: 18, color: AppTheme.text400), SizedBox(width: 8), Text('Edit')])),
+                const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 18, color: AppTheme.accentRed), SizedBox(width: 8), Text('Delete', style: TextStyle(color: AppTheme.accentRed))])),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        
+        // Compact Exercise List
+        if (exercises.isNotEmpty)
+          ...exercises.map((ex) => _buildCompactExerciseRow(ex)),
+
+        // Notes
+        if (session['notes'] != null && (session['notes'] as String).isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.notes, size: 14, color: AppTheme.text600),
+                const SizedBox(width: 8),
+                Expanded(child: Text(session['notes'], style: const TextStyle(fontSize: 13, color: AppTheme.text400, fontStyle: FontStyle.italic))),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCompactExerciseRow(dynamic ex) {
+    final cat = ex['category'];
+    Color color = AppTheme.accentGreen;
+    if (cat == 'main') color = AppTheme.accentRed;
+    else if (cat == 'secondary') color = AppTheme.accentBlue;
+
+    final sets = ex['sets'] as List? ?? [];
+    
+    final setsDisplay = sets.map((s) {
+      final w = s['weight'];
+      final r = s['reps'];
+      final c = s['sets'] ?? 1;
+      if (c > 1) {
+        return '$c×$w×$r';
+      }
+      return '$w×$r';
+    }).join(', ');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: AppTheme.bg800.withValues(alpha: 0.5))),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Badges row
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: [
-                          _badge('Block ${session['block']}', AppTheme.accentRed),
-                          if (session['week'] != null) _badge('Week ${session['week']}', AppTheme.accentBlue),
-                          _badge(session['day'] ?? '', AppTheme.accentAmber),
-                          if (session['duration'] != null && (session['duration'] as num) > 0)
-                            _badge('${session['duration']}min', AppTheme.accentGreen),
-                        ],
-                      ),
-                      if (formattedDate != null) ...[
-                        const SizedBox(height: 6),
-                        Text(formattedDate, style: const TextStyle(fontSize: 12, color: AppTheme.text500)),
-                      ],
-                    ],
-                  ),
-                ),
-                // Actions
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, color: AppTheme.text500, size: 20),
-                  color: AppTheme.bg850,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  onSelected: (v) {
-                    if (v == 'edit') _handleEdit(context);
-                    if (v == 'delete') _handleDelete(context);
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, size: 18, color: AppTheme.text400), SizedBox(width: 8), Text('Edit')])),
-                    const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 18, color: AppTheme.accentRed), SizedBox(width: 8), Text('Delete', style: TextStyle(color: AppTheme.accentRed))])),
-                  ],
-                ),
-              ],
-            ),
+          Text(
+            ex['name'],
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: color),
+            overflow: TextOverflow.ellipsis,
           ),
-
-          // Exercises - Lyfta style: big bold weight, clear layout
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (mainLifts.isNotEmpty) _buildExerciseGroup(mainLifts, AppTheme.accentRed),
-                if (secondary.isNotEmpty) _buildExerciseGroup(secondary, AppTheme.accentBlue),
-                if (accessories.isNotEmpty) _buildExerciseGroup(accessories, AppTheme.accentGreen),
-              ],
+          if (setsDisplay.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              setsDisplay,
+              style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontFamily: 'monospace'),
             ),
-          ),
-
-          // Notes
-          if (session['notes'] != null && (session['notes'] as String).isNotEmpty)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppTheme.bg900.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.notes, size: 14, color: AppTheme.text500),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(session['notes'], style: const TextStyle(fontSize: 13, color: AppTheme.text400, fontStyle: FontStyle.italic))),
-                ],
-              ),
-            ),
+          ],
         ],
       ),
-    );
-  }
-
-  Widget _badge(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700)),
-    );
-  }
-
-  Widget _buildExerciseGroup(List<dynamic> exercises, Color color) {
-    return Column(
-      children: exercises.map((ex) {
-        final sets = ex['sets'] as List? ?? [];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Exercise name + %RM
-              Row(
-                children: [
-                  Container(
-                    width: 4, height: 20,
-                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            ex['name'],
-                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.text50, letterSpacing: -0.3),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (ex['percentage'] != null) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppTheme.accentGreen.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(5),
-                              border: Border.all(color: AppTheme.accentGreen.withValues(alpha: 0.25)),
-                            ),
-                            child: Text(
-                              '${ex['percentage']}%',
-                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.accentGreen),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  // Total volume badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppTheme.bg800,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '${sets.length} ${sets.length == 1 ? 'set' : 'sets'}',
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.text500),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // Sets - each row is clear and readable
-              ...sets.asMap().entries.map((entry) {
-                final s = entry.value;
-                final weight = s['weight'];
-                final reps = s['reps'];
-                final numSets = s['sets'] ?? 1;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.bg900.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      // Set indicator
-                      Container(
-                        width: 26, height: 26,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: color.withValues(alpha: 0.15),
-                          border: Border.all(color: color.withValues(alpha: 0.3)),
-                        ),
-                        child: Center(
-                          child: Text('${entry.key + 1}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      // Weight - BIG AND BOLD
-                      Text('$weight', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: color, fontFamily: 'monospace')),
-                      Text(' kg', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color.withValues(alpha: 0.7))),
-                      const Spacer(),
-                      // Sets × Reps
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppTheme.bg800,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (numSets > 1) ...[
-                              Text('$numSets', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.text200, fontFamily: 'monospace')),
-                              const Text(' × ', style: TextStyle(fontSize: 13, color: AppTheme.text500)),
-                            ],
-                            Text('$reps', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.text200, fontFamily: 'monospace')),
-                            const Text(' reps', style: TextStyle(fontSize: 11, color: AppTheme.text500)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ],
-          ),
-        );
-      }).toList(),
     );
   }
 

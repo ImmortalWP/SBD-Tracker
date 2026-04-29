@@ -1,9 +1,15 @@
-import 'package:flutter/material.dart';
-import '../services/api_service.dart';
-import '../theme/app_theme.dart';
+import 'dart:async';
 import 'dart:convert';
-import 'package:intl/intl.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
+import '../services/draft_service.dart';
+import '../theme/app_theme.dart';
+import '../screens/add_session_screen.dart';
+import '../main.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -17,11 +23,62 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic> _prs = {'Squat': 0, 'Bench': 0, 'Deadlift': 0};
   bool _loading = true;
 
+  bool _hasDraft = false;
+  int _elapsedSeconds = 0;
+  Timer? _timerTick;
+
   @override
   void initState() {
     super.initState();
     _loadCached();
     _loadData();
+    _checkDraft();
+  }
+
+  @override
+  void dispose() {
+    _timerTick?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkDraft() async {
+    final draft = await DraftService.loadDraft();
+    if (draft != null && draft.isNotEmpty) {
+      _hasDraft = true;
+      _elapsedSeconds = draft['elapsedSeconds'] ?? 0;
+      final wasRunning = draft['timerRunning'] == true;
+      final lastTickStr = draft['lastTickTime'];
+
+      if (wasRunning && lastTickStr != null) {
+        final lastTick = DateTime.tryParse(lastTickStr);
+        if (lastTick != null) {
+          _elapsedSeconds += DateTime.now().difference(lastTick).inSeconds;
+        }
+        _startTimer();
+      } else if (wasRunning) {
+        _startTimer();
+      } else {
+        if (mounted) setState(() {});
+      }
+    } else {
+      _hasDraft = false;
+      _timerTick?.cancel();
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _startTimer() {
+    _timerTick?.cancel();
+    _timerTick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _elapsedSeconds++);
+    });
+  }
+
+  String get _timerDisplay {
+    final h = _elapsedSeconds ~/ 3600;
+    final m = ((_elapsedSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final s = (_elapsedSeconds % 60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
   }
 
   Future<void> _loadCached() async {
@@ -41,407 +98,353 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadData() async {
     try {
-      final results = await Future.wait([ApiService.getSessions(), ApiService.getPRs()]);
+      final results = await Future.wait([
+        ApiService.getSessions(),
+        ApiService.getPRs(),
+      ]);
       final sessions = results[0] as List<dynamic>;
       final prs = results[1] as Map<String, dynamic>;
+      
+      sessions.sort((a, b) {
+        final da = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime(2000);
+        final db = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(2000);
+        return db.compareTo(da);
+      });
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('cache_dashboard', jsonEncode({'sessions': sessions, 'prs': prs}));
-      if (mounted) setState(() { _sessions = sessions; _prs = prs; _loading = false; });
+      
+      if (mounted) {
+        setState(() {
+          _sessions = sessions;
+          _prs = prs;
+          _loading = false;
+        });
+      }
+      _checkDraft();
     } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  // Group: block → week → sessions
-  Map<int, Map<int, List<dynamic>>> _grouped() {
-    final Map<int, Map<int, List<dynamic>>> g = {};
-    for (final s in _sessions) {
-      final b = (s['block'] as num?)?.toInt() ?? 0;
-      final w = (s['week'] as num?)?.toInt() ?? 0;
-      g.putIfAbsent(b, () => {});
-      g[b]!.putIfAbsent(w, () => []);
-      g[b]![w]!.add(s);
+  double _getMaxWeight(Map<String, dynamic> ex) {
+    final sets = ex['sets'] as List? ?? [];
+    double max = 0;
+    for (final st in sets) {
+      final w = (st['weight'] as num?)?.toDouble() ?? 0.0;
+      if (w > max) max = w;
     }
-    return g;
+    return max;
+  }
+
+  String _getInsight() {
+    if (_sessions.isEmpty) return "Log a session to track progress";
+    if (_sessions.length == 1) return "First session logged. Keep it up!";
+
+    for (final s in _sessions) {
+      final exList = s['exercises'] as List? ?? [];
+      for (final ex in exList) {
+        if (ex['category'] == 'main') {
+          final liftName = ex['name'] as String;
+          final currentMax = _getMaxWeight(ex);
+          
+          final previousSessions = _sessions.where((ps) => ps['_id'] != s['_id']).toList();
+          for (final ps in previousSessions) {
+            final pExList = ps['exercises'] as List? ?? [];
+            for (final pEx in pExList) {
+              if (pEx['name'] == liftName) {
+                final prevMax = _getMaxWeight(pEx);
+                if (currentMax > prevMax) {
+                  return "$liftName +${(currentMax - prevMax).toStringAsFixed(1).replaceAll('.0', '')}kg from last session";
+                } else if (currentMax < prevMax) {
+                  return "$liftName ${(currentMax - prevMax).toStringAsFixed(1).replaceAll('.0', '')}kg from last session";
+                } else {
+                  return "Matched last session's $liftName weight";
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return "Consistent training!";
+  }
+
+  void _openSessionScreen() async {
+    final reload = await Navigator.push(context, MaterialPageRoute(builder: (_) => const AddSessionScreen()));
+    if (reload == true) {
+      _loadData();
+    }
+    _checkDraft();
   }
 
   @override
   Widget build(BuildContext context) {
-    final grouped = _grouped();
-    final blocks = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
-
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      color: AppTheme.accentRed,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-        children: [
-          // Header
-          const Text('Dashboard', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.text50)),
-          Text('${_sessions.length} sessions logged', style: const TextStyle(fontSize: 13, color: AppTheme.text500)),
-          const SizedBox(height: 20),
-
-          // PRs
-          const Text('PERSONAL RECORDS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text500, letterSpacing: 1)),
-          const SizedBox(height: 8),
-          _buildPRRow(),
-          const SizedBox(height: 8),
-          _buildTotalRow(),
-          const SizedBox(height: 24),
-
-          // Sessions
-          const Text('TRAINING LOG', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text500, letterSpacing: 1)),
-          const SizedBox(height: 10),
-
-          if (_loading)
-            ...List.generate(3, (_) => Container(height: 60, margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(color: AppTheme.bg900, borderRadius: BorderRadius.circular(12))))
-          else if (_sessions.isEmpty)
-            _emptyState()
-          else
-            ...blocks.take(3).map((b) => _buildBlock(b, grouped[b]!)),
-        ],
+    return Scaffold(
+      backgroundColor: AppTheme.bg950,
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadData,
+          color: AppTheme.accentRed,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+            children: [
+              _buildHeader(),
+              const SizedBox(height: 36),
+              _buildPRRow(),
+              const SizedBox(height: 6),
+              _buildInsight(),
+              const SizedBox(height: 48),
+              _buildRecentSessions(),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget _buildHeader() {
+    final auth = context.read<AuthService>();
+    final username = auth.username ?? 'Lifter';
+    
+    final hour = DateTime.now().hour;
+    String greeting = 'Good evening';
+    if (hour < 12) greeting = 'Good morning';
+    else if (hour < 17) greeting = 'Good afternoon';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$greeting, $username', style: const TextStyle(fontSize: 16, color: AppTheme.text400, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 24),
+        
+        if (_hasDraft) ...[
+          const Text('Workout in progress', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.text50)),
+          const SizedBox(height: 6),
+          Text(_timerDisplay, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppTheme.accentGreen, fontFamily: 'monospace', letterSpacing: 2)),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.accentGreen,
+                foregroundColor: AppTheme.bg950,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+              ),
+              onPressed: _openSessionScreen,
+              child: const Text('Continue Workout', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+          )
+        ] else ...[
+          const Text('Next Session', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.text50)),
+          const SizedBox(height: 6),
+          const Text('Ready to train', style: TextStyle(fontSize: 15, color: AppTheme.text500)),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.text50,
+                foregroundColor: AppTheme.bg950,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+              ),
+              onPressed: _openSessionScreen,
+              child: const Text('Start Session', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+          )
+        ],
+      ],
     );
   }
 
   Widget _buildPRRow() {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _prCard('Squat', '🦵', AppTheme.accentRed),
-          const SizedBox(width: 8),
-          _prCard('Bench', '💪', AppTheme.accentBlue),
-          const SizedBox(width: 8),
-          _prCard('Deadlift', '🏋️', AppTheme.accentAmber),
-        ],
-      ),
-    );
-  }
+    final s = _prs['Squat'] ?? 0;
+    final b = _prs['Bench'] ?? 0;
+    final d = _prs['Deadlift'] ?? 0;
+    final total = s + b + d;
 
-  Widget _prCard(String lift, String emoji, Color color) {
-    final val = _prs[lift] ?? 0;
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.15)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        _prText('S', s),
+        _prText('B', b),
+        _prText('D', d),
+        const Text('|', style: TextStyle(color: AppTheme.text600, fontSize: 16, fontWeight: FontWeight.w400)),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 16)),
-            const SizedBox(height: 4),
-            Text(lift, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
-            FittedBox(
-              fit: BoxFit.scaleDown, alignment: Alignment.centerLeft,
-              child: Text('${val}kg', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppTheme.text50, fontFamily: 'monospace')),
-            ),
+            const Text('Total ', style: TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w600)),
+            Text('${total}kg', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.text100)),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildTotalRow() {
-    final total = (_prs['Squat'] ?? 0) + (_prs['Bench'] ?? 0) + (_prs['Deadlift'] ?? 0);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(color: AppTheme.bg850, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppTheme.bg800)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text('SBD Total', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.text400)),
-          Text('$total kg', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.text50, fontFamily: 'monospace')),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBlock(int block, Map<int, List<dynamic>> weeks) {
-    final sortedWeeks = weeks.keys.toList()..sort((a, b) => b.compareTo(a));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [AppTheme.accentRed.withValues(alpha: 0.2), AppTheme.accentAmber.withValues(alpha: 0.1)]),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text('BLOCK $block', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppTheme.accentRed, letterSpacing: 1)),
-            ),
-            const SizedBox(width: 8),
-            Expanded(child: Divider(color: AppTheme.bg800)),
-          ]),
-        ),
-        ...sortedWeeks.map((w) => _buildWeek(w, weeks[w]!)),
-        const SizedBox(height: 12),
       ],
     );
   }
 
-  Widget _buildWeek(int week, List<dynamic> sessions) {
-    final dayOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    final sorted = [...sessions]..sort((a, b) => dayOrder.indexOf(a['day'] ?? '').compareTo(dayOrder.indexOf(b['day'] ?? '')));
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _prText(String label, num value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6, left: 2),
-          child: Row(children: [
-            Container(width: 3, height: 14, decoration: BoxDecoration(color: AppTheme.accentAmber, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(width: 8),
-            Text(week == 0 ? 'Unassigned' : 'Week $week',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.accentAmber)),
-          ]),
-        ),
-        ...sorted.map((s) => _ExpandableSession(session: s, onDelete: () {
-          setState(() => _sessions.removeWhere((x) => x['_id'] == s['_id']));
-        })),
-        const SizedBox(height: 8),
+        Text('$label ', style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w600)),
+        Text(value.toString().replaceAll('.0', ''), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.text100)),
       ],
     );
   }
 
-  Widget _emptyState() {
-    return Container(
-      padding: const EdgeInsets.all(40),
-      decoration: BoxDecoration(color: AppTheme.bg900, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.bg800)),
-      child: const Column(children: [
-        Text('🏋️', style: TextStyle(fontSize: 48)),
-        SizedBox(height: 12),
-        Text('No sessions yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.text300)),
-        SizedBox(height: 4),
-        Text('Tap Log to record your first session', style: TextStyle(fontSize: 13, color: AppTheme.text500)),
-      ]),
+  Widget _buildInsight() {
+    return Text(
+      _getInsight(),
+      style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w500),
     );
   }
-}
 
-/// Expandable session card — shows summary, tap to expand full details
-class _ExpandableSession extends StatefulWidget {
-  final Map<String, dynamic> session;
-  final VoidCallback onDelete;
-  const _ExpandableSession({required this.session, required this.onDelete});
+  Widget _buildRecentSessions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Recent Sessions', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.text100)),
+        const SizedBox(height: 16),
+        
+        if (_loading && _sessions.isEmpty)
+          const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: AppTheme.text500, strokeWidth: 2)))
+        else if (_sessions.isEmpty)
+          const Text('No sessions logged yet.', style: TextStyle(color: AppTheme.text600, fontSize: 14))
+        else ..._buildRecentSessionsList()
+      ],
+    );
+  }
 
-  @override
-  State<_ExpandableSession> createState() => _ExpandableSessionState();
-}
+  List<Widget> _buildRecentSessionsList() {
+    final now = DateTime.now();
+    
+    final recent = _sessions.where((s) {
+      if (s['date'] == null) return false;
+      final d = DateTime.tryParse(s['date'].toString());
+      if (d == null) return false;
+      // Keep sessions from exactly now down to 7 days ago, ignoring time of day differences by just checking the date difference loosely or using isAfter
+      // A safe check: difference in days <= 7
+      final diff = now.difference(d).inDays;
+      return diff >= 0 && diff <= 7;
+    }).toList();
 
-class _ExpandableSessionState extends State<_ExpandableSession> {
-  bool _expanded = false;
+    if (recent.isEmpty) {
+      return [const Text('No sessions in the last 7 days.', style: TextStyle(color: AppTheme.text600, fontSize: 14))];
+    }
 
-  Map<String, dynamic> get s => widget.session;
+    final Map<int, List<dynamic>> grouped = {};
+    for (var s in recent) {
+      final block = s['block'] as int? ?? 0;
+      grouped.putIfAbsent(block, () => []).add(s);
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    final exercises = s['exercises'] as List? ?? [];
-    final keyLifts = exercises.where((e) => e['category'] == 'main' || e['category'] == 'secondary').toList();
-    final accessories = exercises.where((e) => e['category'] != 'main' && e['category'] != 'secondary').toList();
+    final Map<String, int> dayOrder = {
+      'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
+      'Thursday': 4, 'Friday': 5, 'Saturday': 6,
+    };
 
-    String? dateStr;
-    try { dateStr = DateFormat('MMM d').format(DateTime.parse(s['date'])); } catch (_) {}
+    final widgets = <Widget>[];
+    for (var entry in grouped.entries) {
+      final sessionsInBlock = entry.value;
+      sessionsInBlock.sort((a, b) {
+        final wa = int.tryParse(a['week']?.toString() ?? '0') ?? 0;
+        final wb = int.tryParse(b['week']?.toString() ?? '0') ?? 0;
+        if (wa != wb) return wb.compareTo(wa); // descending week
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      decoration: BoxDecoration(
-        color: AppTheme.bg900,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _expanded ? AppTheme.accentAmber.withValues(alpha: 0.2) : AppTheme.bg800),
-      ),
-      child: Column(children: [
-        // Always visible: summary row
-        InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-            child: Row(children: [
-              // Day badge
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: AppTheme.accentAmber.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(child: Text(
-                  (s['day'] ?? 'N/A').toString().substring(0, 3),
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppTheme.accentAmber),
-                )),
-              ),
-              const SizedBox(width: 10),
-              // Summary text — show main + secondary lifts
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      keyLifts.map((e) => e['name']).join(' / '),
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Row(children: [
-                      if (dateStr != null) Text('$dateStr  ', style: const TextStyle(fontSize: 11, color: AppTheme.text500)),
-                      if (accessories.isNotEmpty) Text('+ ${accessories.length} accessory', style: const TextStyle(fontSize: 11, color: AppTheme.text600)),
-                    ]),
-                  ],
-                ),
-              ),
-              // Quick weight summary — show HIGHEST weight per exercise (main & secondary)
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  reverse: true, // Align elements to the right
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: keyLifts.map<Widget>((ex) {
-                      final sets = (ex['sets'] as List? ?? []);
-                      if (sets.isEmpty) return const SizedBox();
-                      final maxWeight = sets.fold<num>(0, (max, s) => ((s['weight'] as num?) ?? 0) > max ? (s['weight'] as num) : max);
-                      if (maxWeight <= 0) return const SizedBox();
-                      final color = ex['category'] == 'main' ? AppTheme.accentRed
-                          : ex['category'] == 'secondary' ? AppTheme.accentBlue
-                          : AppTheme.accentGreen;
-                      return Container(
-                        margin: const EdgeInsets.only(left: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(5),
-                          border: Border.all(color: color.withValues(alpha: 0.2)),
-                        ),
-                        child: Text('${maxWeight}kg', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color, fontFamily: 'monospace')),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 20, color: AppTheme.text600),
-            ]),
+        final da = dayOrder[a['day']?.toString()] ?? 99;
+        final db = dayOrder[b['day']?.toString()] ?? 99;
+        return da.compareTo(db); // ascending day
+      });
+
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Block ${entry.key}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100)),
+              const SizedBox(height: 6),
+              const Divider(color: AppTheme.bg800, height: 1),
+            ],
           ),
         ),
+      );
 
-        // Expanded details
-        if (_expanded) ...[
-          const Divider(height: 1, color: AppTheme.bg800),
+      for (var session in sessionsInBlock) {
+        final exercises = session['exercises'] as List? ?? [];
+        final mainLifts = exercises.where((e) => e['category'] == 'main' || e['category'] == 'secondary').toList();
+        
+        final liftNames = mainLifts.map((e) => e['name']).join(' / ');
+        
+        final weights = mainLifts.map((ex) {
+          final pct = ex['percentage'];
+          final maxW = _getMaxWeight(ex);
+          final wStr = '${maxW.toString().replaceAll('.0', '')}kg';
+          
+          if (pct != null && pct.toString().isNotEmpty && ex['category'] == 'main') {
+            return '$pct% • $wStr';
+          }
+          return wStr;
+        }).join(' • ');
+
+        final wText = session['week']?.toString() ?? '-';
+        // Format Day safely: if it's a number string like "1", show "D1". If it's "Monday", show "Monday".
+        String dText = session['day']?.toString() ?? '-';
+        if (int.tryParse(dText) != null) dText = 'D$dText';
+
+        widgets.add(
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+            padding: const EdgeInsets.only(bottom: 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Main and secondary exercises with full set details
-                ...keyLifts.map((ex) {
-                  final color = ex['category'] == 'main' ? AppTheme.accentRed
-                      : ex['category'] == 'secondary' ? AppTheme.accentBlue
-                      : AppTheme.accentGreen;
-                  final sets = ex['sets'] as List? ?? [];
-                  final pct = ex['percentage'];
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        Container(width: 3, height: 16, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
-                        const SizedBox(width: 8),
-                        Text(ex['name'] ?? '', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
-                        if (pct != null) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(color: AppTheme.accentGreen.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
-                            child: Text('$pct%', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.accentGreen)),
-                          ),
-                        ],
-                      ]),
-                      const SizedBox(height: 6),
-                      // Sets in a readable grid
-                      Wrap(spacing: 6, runSpacing: 4, children: sets.map<Widget>((st) {
-                        final w = st['weight'];
-                        final r = st['reps'];
-                        final n = st['sets'] ?? 1;
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: color.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: color.withValues(alpha: 0.12)),
-                          ),
-                          child: Column(children: [
-                            Text('$w kg', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color, fontFamily: 'monospace')),
-                            Text(n > 1 ? '$n×$r reps' : '$r reps',
-                                style: const TextStyle(fontSize: 11, color: AppTheme.text500)),
-                          ]),
-                        );
-                      }).toList()),
-                    ]),
-                  );
-                }),
-
-                // Notes
-                if (s['notes'] != null && (s['notes'] as String).isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    const Icon(Icons.notes, size: 13, color: AppTheme.text500),
-                    const SizedBox(width: 6),
-                    Expanded(child: Text(s['notes'], style: const TextStyle(fontSize: 12, color: AppTheme.text500, fontStyle: FontStyle.italic))),
-                  ]),
-                ],
-
-                // Delete button
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: GestureDetector(
-                    onTap: () => _confirmDelete(context),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: AppTheme.accentRed.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(6),
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'W$wText $dText',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.text500),
                       ),
-                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.delete_outline, size: 14, color: AppTheme.accentRed),
-                        SizedBox(width: 4),
-                        Text('Delete', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.accentRed)),
-                      ]),
-                    ),
+                      const TextSpan(
+                        text: '   ', // Spacing instead of a dot, based on the prompt "W3 D1   Squat / Bench"
+                      ),
+                      TextSpan(
+                        text: liftNames.isEmpty ? 'Accessories only' : liftNames,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100),
+                      ),
+                    ],
                   ),
                 ),
+                if (weights.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(weights, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text400, fontFamily: 'monospace')),
+                ],
               ],
             ),
           ),
-        ],
-      ]),
-    );
-  }
+        );
+      }
+    }
 
-  void _confirmDelete(BuildContext context) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bg850,
-        title: const Text('Delete Session?'),
-        content: const Text('This cannot be undone.', style: TextStyle(color: AppTheme.text400)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete', style: TextStyle(color: AppTheme.accentRed))),
-        ],
+    widgets.add(const SizedBox(height: 8));
+    widgets.add(
+      Center(
+        child: TextButton(
+          onPressed: () {
+            context.findAncestorStateOfType<MainShellState>()?.switchTab(1);
+          },
+          child: const Text('View All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.text500)),
+        ),
       ),
     );
-    if (ok == true) {
-      try { await ApiService.deleteSession(s['_id']); } catch (_) {}
-      widget.onDelete();
-    }
+
+    return widgets;
   }
 }
