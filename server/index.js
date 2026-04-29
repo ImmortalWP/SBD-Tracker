@@ -5,6 +5,12 @@ const cors = require('cors');
 const sessionRoutes = require('./routes/sessions');
 const authRoutes = require('./routes/auth');
 const leaderboardRoutes = require('./routes/leaderboard');
+const workoutRoutes = require('./routes/workouts');
+const exerciseRoutes = require('./routes/exercises');
+const programRoutes = require('./routes/programs');
+const bodymetricRoutes = require('./routes/bodymetrics');
+const statsRoutes = require('./routes/stats');
+const profileRoutes = require('./routes/profile');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -17,6 +23,12 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/workouts', workoutRoutes);
+app.use('/api/exercises', exerciseRoutes);
+app.use('/api/programs', programRoutes);
+app.use('/api/bodymetrics', bodymetricRoutes);
+app.use('/api/stats', statsRoutes);
+app.use('/api/profile', profileRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
