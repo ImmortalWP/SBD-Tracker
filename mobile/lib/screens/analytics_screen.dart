@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
-import '../theme/app_theme.dart';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/api_service.dart';
+import '../services/analytics_processor.dart';
+import '../theme/app_theme.dart';
+import '../widgets/strength_chart.dart';
+import '../widgets/volume_chart.dart';
+import '../widgets/insights_widget.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -13,9 +17,9 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  Map<String, dynamic> _prs = {'Squat': 0, 'Bench': 0, 'Deadlift': 0};
   List<dynamic> _sessions = [];
   bool _loading = true;
+  TimeRange _selectedRange = TimeRange.weeks4;
 
   @override
   void initState() {
@@ -26,21 +30,36 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Future<void> _loadCached() async {
     final prefs = await SharedPreferences.getInstance();
-    final cached = prefs.getString('cache_analytics2');
+    final cached = prefs.getString('cache_analytics_v3');
     if (cached != null) {
       final data = jsonDecode(cached);
-      if (mounted) setState(() { _prs = data['prs'] ?? _prs; _sessions = data['sessions'] ?? []; _loading = false; });
+      if (mounted) {
+        setState(() {
+          _sessions = data['sessions'] ?? [];
+          _loading = false;
+        });
+      }
     }
   }
 
   Future<void> _loadData() async {
     try {
-      final results = await Future.wait([ApiService.getPRs(), ApiService.getSessions()]);
-      final prs = results[0] as Map<String, dynamic>;
-      final sessions = results[1] as List<dynamic>;
+      final sessions = await ApiService.getSessions();
+      sessions.sort((a, b) {
+        final da = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime(2000);
+        final db = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(2000);
+        return da.compareTo(db);
+      });
+
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('cache_analytics2', jsonEncode({'prs': prs, 'sessions': sessions}));
-      if (mounted) setState(() { _prs = prs; _sessions = sessions; _loading = false; });
+      await prefs.setString('cache_analytics_v3', jsonEncode({'sessions': sessions}));
+
+      if (mounted) {
+        setState(() {
+          _sessions = sessions;
+          _loading = false;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
@@ -48,156 +67,242 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final total = (_prs['Squat'] ?? 0) + (_prs['Bench'] ?? 0) + (_prs['Deadlift'] ?? 0);
+    final processor = AnalyticsProcessor(_sessions);
 
     return RefreshIndicator(
       onRefresh: _loadData,
       color: AppTheme.accentRed,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
         children: [
-          const Text('Analytics', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.text50)),
+          // Title
+          const Text(
+            'Analytics',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.text50),
+          ),
           const SizedBox(height: 20),
 
+          // Time Range Selector
+          _buildTimeRangeSelector(),
+          const SizedBox(height: 28),
+
           if (_loading)
-            const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppTheme.accentRed)))
+            const Padding(
+              padding: EdgeInsets.all(60),
+              child: Center(child: CircularProgressIndicator(color: AppTheme.text500, strokeWidth: 2)),
+            )
+          else if (_sessions.isEmpty)
+            _buildEmptyState()
           else ...[
-            // SBD Total
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [AppTheme.accentRed.withValues(alpha: 0.1), AppTheme.accentAmber.withValues(alpha: 0.05)]),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.2)),
-              ),
-              child: Column(children: [
-                const Text('SBD TOTAL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text500, letterSpacing: 1)),
-                const SizedBox(height: 4),
-                Text('$total kg', style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: AppTheme.text50, fontFamily: 'monospace')),
-                const SizedBox(height: 8),
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  _miniPR('S', _prs['Squat'] ?? 0, AppTheme.accentRed),
-                  const SizedBox(width: 16),
-                  _miniPR('B', _prs['Bench'] ?? 0, AppTheme.accentBlue),
-                  const SizedBox(width: 16),
-                  _miniPR('D', _prs['Deadlift'] ?? 0, AppTheme.accentAmber),
-                ]),
-              ]),
+            // Strength Trend
+            _sectionHeader('ESTIMATED 1RM TREND'),
+            const SizedBox(height: 12),
+            StrengthChart(
+              data: {
+                'Squat': processor.getStrengthTrend('Squat', _selectedRange),
+                'Bench': processor.getStrengthTrend('Bench', _selectedRange),
+                'Deadlift': processor.getStrengthTrend('Deadlift', _selectedRange),
+              },
+              range: _selectedRange,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 32),
 
-            // Quick stats
-            Row(children: [
-              _statCard('Sessions', '${_sessions.length}', Icons.fitness_center),
-              const SizedBox(width: 8),
-              _statCard('Blocks', '${_sessions.map((s) => s['block']).toSet().length}', Icons.layers),
-            ]),
-            const SizedBox(height: 20),
+            // Weekly Progress Summary
+            _sectionHeader('PROGRESS'),
+            const SizedBox(height: 12),
+            _buildProgressSummary(processor),
+            const SizedBox(height: 32),
 
-            // Volume per block chart
-            if (_sessions.isNotEmpty) ...[
-              const Text('VOLUME BY BLOCK', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.text500, letterSpacing: 1)),
-              const SizedBox(height: 10),
-              _buildVolumeChart(),
-            ],
+            // Volume Trend
+            _sectionHeader('VOLUME TREND'),
+            const SizedBox(height: 12),
+            VolumeChart(data: processor.getVolumeTrend(_selectedRange)),
+            const SizedBox(height: 32),
+
+            // Insights
+            _sectionHeader('INSIGHTS'),
+            const SizedBox(height: 12),
+            InsightsWidget(insights: processor.getInsights(_selectedRange)),
           ],
         ],
       ),
     );
   }
 
-  Widget _miniPR(String label, num val, Color color) {
-    return Column(children: [
-      Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
-      Text('$val', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color, fontFamily: 'monospace')),
-    ]);
-  }
-
-  Widget _statCard(String label, String value, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: AppTheme.bg900, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTheme.bg800)),
-        child: Row(children: [
-          Icon(icon, size: 18, color: AppTheme.text500),
-          const SizedBox(width: 10),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.text500)),
-            Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppTheme.text100, fontFamily: 'monospace')),
-          ]),
-        ]),
+  Widget _buildTimeRangeSelector() {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppTheme.bg900,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.bg800, width: 0.5),
+      ),
+      child: Row(
+        children: TimeRange.values.map((range) {
+          final isSelected = range == _selectedRange;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedRange = range),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppTheme.bg700 : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  range.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? AppTheme.text50 : AppTheme.text500,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 
-  Widget _buildVolumeChart() {
-    final Map<int, Map<String, num>> blockVols = {};
-    for (final s in _sessions) {
-      final block = (s['block'] as num?)?.toInt() ?? 0;
-      blockVols.putIfAbsent(block, () => {'Squat': 0, 'Bench': 0, 'Deadlift': 0});
-      for (final ex in (s['exercises'] as List? ?? [])) {
-        final name = (ex['name'] as String? ?? '').toLowerCase();
-        for (final set in (ex['sets'] as List? ?? [])) {
-          final vol = ((set['weight'] as num?) ?? 0) * ((set['reps'] as num?) ?? 0) * ((set['sets'] as num?) ?? 1);
-          if (name.contains('squat')) blockVols[block]!['Squat'] = blockVols[block]!['Squat']! + vol;
-          else if (name.contains('bench') || name.contains('larsen')) blockVols[block]!['Bench'] = blockVols[block]!['Bench']! + vol;
-          else if (name.contains('dead') || name.contains('rdl')) blockVols[block]!['Deadlift'] = blockVols[block]!['Deadlift']! + vol;
-        }
-      }
+  Widget _buildProgressSummary(AnalyticsProcessor processor) {
+    final progress = processor.getWeeklyProgress(_selectedRange);
+    if (progress.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Text('Not enough data yet', style: TextStyle(fontSize: 13, color: AppTheme.text600)),
+      );
     }
-    if (blockVols.isEmpty) return const SizedBox();
 
-    final sorted = blockVols.keys.toList()..sort();
-    final maxVol = blockVols.values.expand((m) => m.values).fold<num>(0, (a, b) => math.max(a, b));
-    final colors = {'Squat': AppTheme.accentRed, 'Bench': AppTheme.accentBlue, 'Deadlift': AppTheme.accentAmber};
+    return Column(
+      children: progress.map((p) => _buildProgressRow(p)).toList(),
+    );
+  }
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppTheme.bg900, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTheme.bg800)),
-      child: Column(children: [
-        // Legend
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: colors.entries.map((e) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(children: [
-            Container(width: 8, height: 8, decoration: BoxDecoration(color: e.value, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(width: 4),
-            Text(e.key, style: const TextStyle(fontSize: 10, color: AppTheme.text500)),
-          ]),
-        )).toList()),
-        const SizedBox(height: 14),
-        // Bars
-        SizedBox(
-          height: 140,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: sorted.map((block) {
-              final vols = blockVols[block]!;
-              return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
-                    Expanded(
-                      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: ['Squat', 'Bench', 'Deadlift'].map((lift) {
-                        final h = maxVol > 0 ? ((vols[lift] ?? 0) / maxVol) : 0.0;
-                        return Expanded(child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 1),
-                          child: FractionallySizedBox(
-                            heightFactor: h.toDouble().clamp(0.02, 1.0),
-                            alignment: Alignment.bottomCenter,
-                            child: Container(decoration: BoxDecoration(color: colors[lift]!, borderRadius: const BorderRadius.vertical(top: Radius.circular(3)))),
-                          ),
-                        ));
-                      }).toList()),
-                    ),
-                    const SizedBox(height: 4),
-                    Text('B$block', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.text500)),
-                  ]),
-                ),
-              );
-            }).toList(),
+  Widget _buildProgressRow(LiftProgress p) {
+    final liftColors = {
+      'Squat': AppTheme.accentRed,
+      'Bench': AppTheme.accentBlue,
+      'Deadlift': AppTheme.accentAmber,
+    };
+    final color = liftColors[p.lift] ?? AppTheme.text400;
+
+    String changeText;
+    Color changeColor;
+    IconData changeIcon;
+
+    switch (p.trend) {
+      case TrendDirection.up:
+        changeText = '+${p.change.toStringAsFixed(0)}kg';
+        changeColor = AppTheme.accentGreen;
+        changeIcon = Icons.arrow_upward;
+        break;
+      case TrendDirection.down:
+        changeText = '${p.change.toStringAsFixed(0)}kg';
+        changeColor = AppTheme.accentRed;
+        changeIcon = Icons.arrow_downward;
+        break;
+      case TrendDirection.plateau:
+        changeText = 'Plateau';
+        changeColor = AppTheme.accentAmber;
+        changeIcon = Icons.horizontal_rule;
+        break;
+      case TrendDirection.flat:
+        changeText = p.previous == 0 ? '—' : 'No change';
+        changeColor = AppTheme.text500;
+        changeIcon = Icons.horizontal_rule;
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          // Lift indicator
+          Container(
+            width: 4,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
-        ),
-      ]),
+          const SizedBox(width: 12),
+          // Lift name
+          SizedBox(
+            width: 70,
+            child: Text(
+              p.lift,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text200),
+            ),
+          ),
+          // Current e1RM
+          Expanded(
+            child: Text(
+              '${p.current.toStringAsFixed(0)}kg',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.text100,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+          // Change
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(changeIcon, size: 14, color: changeColor),
+              const SizedBox(width: 4),
+              Text(
+                changeText,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: changeColor,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: AppTheme.text500,
+        letterSpacing: 1.5,
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 60),
+      child: Column(
+        children: [
+          Icon(Icons.analytics_outlined, size: 48, color: AppTheme.text700),
+          const SizedBox(height: 16),
+          const Text(
+            'No sessions logged yet',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.text400),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Start training to see your analytics',
+            style: TextStyle(fontSize: 13, color: AppTheme.text600),
+          ),
+        ],
+      ),
     );
   }
 }
