@@ -56,6 +56,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   List<String> get _allAccessoryLifts => _accessoryLifts.values.expand((e) => e).toList();
 
   List<String> _dynamicAccessories = [];
+  bool _isDiscarding = false;
 
   // Each exercise: { name, category, pctCtrl, sets: [ {wCtrl, sCtrl, rCtrl} ] }
   final List<_ExData> _exercises = [];
@@ -115,7 +116,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   }
 
   void _saveDraftSilent() {
-    if (_isEditing) return;
+    if (_isEditing || _isDiscarding) return;
     final hasData = _blockCtrl.text.isNotEmpty || _exercises.any((e) => e.name.isNotEmpty);
     if (hasData) _saveDraft();
   }
@@ -135,26 +136,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   Future<void> _tryLoadDraft() async {
     final draft = await DraftService.loadDraft();
     if (draft != null && mounted) {
-      final resume = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppTheme.bg850,
-          title: const Text('Resume Session?'),
-          content: const Text('You have an in-progress session. Resume it?', style: TextStyle(color: AppTheme.text400)),
-          actions: [
-            TextButton(
-              onPressed: () { DraftService.clearDraft(); Navigator.pop(ctx, false); },
-              child: const Text('Discard', style: TextStyle(color: AppTheme.text500)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Resume', style: TextStyle(color: AppTheme.accentGreen)),
-            ),
-          ],
-        ),
-      );
-
-      if (resume == true && draft.isNotEmpty) {
+      if (draft.isNotEmpty) {
         _blockCtrl.text = draft['block']?.toString() ?? '';
         _weekCtrl.text = draft['week']?.toString() ?? '';
         _day = draft['day'] ?? 'Sunday';
@@ -179,6 +161,15 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
           _exercises.add(_ExData.fromMap(ex));
         }
         setState(() {});
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Resumed previous session draft'),
+            backgroundColor: AppTheme.accentGreen,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ));
+        }
         return;
       }
     }
@@ -289,20 +280,13 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     return '$m:$s';
   }
 
-  // Save draft when going back
   Future<bool> _onWillPop() async {
-    if (_isEditing) return true;
+    if (_isEditing || _isDiscarding) return true;
     final hasData = _blockCtrl.text.isNotEmpty || _exercises.any((e) => e.name.isNotEmpty);
     if (hasData) {
+      _isDiscarding = true;
+      _autoSaveTimer?.cancel();
       await _saveDraft();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('💾 Session saved as draft'),
-          backgroundColor: AppTheme.accentAmber,
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        ));
-      }
     }
     return true;
   }
@@ -327,6 +311,8 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       ),
     );
     if (ok == true) {
+      _isDiscarding = true;
+      _autoSaveTimer?.cancel();
       await DraftService.clearDraft();
       if (mounted) Navigator.pop(context, false);
     }
@@ -802,46 +788,53 @@ class _ExerciseCardState extends State<_ExerciseCard> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // Header row
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildNamePicker(),
-                  if (d.category == 'main' || d.category == 'secondary') ...[
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 40,
-                          child: TextField(
-                            controller: d.pctCtrl,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                            style: const TextStyle(fontSize: 14, color: AppTheme.text400, fontWeight: FontWeight.w600),
-                            decoration: const InputDecoration(
-                              hintText: '%RM',
-                              hintStyle: TextStyle(fontSize: 14, color: AppTheme.text600),
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                          ),
-                        ),
-                        const Text('%', style: TextStyle(fontSize: 14, color: AppTheme.text600)),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
+              child: _buildNamePicker(),
             ),
-            if (widget.canDelete)
+            if (d.category == 'main' || d.category == 'secondary') ...[
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.bg900,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 28,
+                      child: TextField(
+                        controller: d.pctCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(fontSize: 14, color: AppTheme.text300, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                        decoration: const InputDecoration(
+                          hintText: '--',
+                          hintStyle: TextStyle(fontSize: 14, color: AppTheme.text700),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    const Text('%', style: TextStyle(fontSize: 14, color: AppTheme.text500, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ],
+            if (widget.canDelete) ...[
+              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.close, size: 20, color: AppTheme.text600),
                 onPressed: widget.onDelete,
                 padding: EdgeInsets.zero, constraints: const BoxConstraints(),
               ),
+            ]
         ]),
         const SizedBox(height: 16),
 
@@ -996,22 +989,26 @@ class _ExerciseCardState extends State<_ExerciseCard> {
   }
 
   Widget _inputField(TextEditingController ctrl, String hint, {bool decimal = false}) {
-    return TextField(
-      controller: ctrl,
-      keyboardType: decimal ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.number,
-      inputFormatters: decimal
-          ? [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))]
-          : [FilteringTextInputFormatter.digitsOnly],
-      textAlign: TextAlign.center,
-      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.text100, fontFamily: 'monospace'),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(fontSize: 16, color: AppTheme.text700),
-        border: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.bg800)),
-        enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.bg800)),
-        focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppTheme.text500)),
-        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-        isDense: true,
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.bg900,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: TextField(
+        controller: ctrl,
+        keyboardType: decimal ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.number,
+        inputFormatters: decimal
+            ? [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))]
+            : [FilteringTextInputFormatter.digitsOnly],
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.text100, fontFamily: 'monospace'),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(fontSize: 16, color: AppTheme.text700),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          isDense: true,
+        ),
       ),
     );
   }

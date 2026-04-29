@@ -104,27 +104,34 @@ class SessionCard extends StatelessWidget {
       final w = s['weight'];
       final r = s['reps'];
       final c = s['sets'] ?? 1;
+      final wStr = w.toString().replaceAll('.0', '');
       if (c > 1) {
-        return '$c×$w×$r';
+        return '$c × $wStr kg × $r reps';
       }
-      return '$w×$r';
-    }).join(', ');
+      return '$wStr kg × $r reps';
+    }).join('\n');
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             ex['name'],
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: color),
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: color, letterSpacing: 0.3),
             overflow: TextOverflow.ellipsis,
           ),
           if (setsDisplay.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              setsDisplay,
-              style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontFamily: 'monospace'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.only(left: 12),
+              decoration: const BoxDecoration(
+                border: Border(left: BorderSide(color: AppTheme.bg800, width: 2)),
+              ),
+              child: Text(
+                setsDisplay,
+                style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontFamily: 'monospace', height: 1.5),
+              ),
             ),
           ],
         ],

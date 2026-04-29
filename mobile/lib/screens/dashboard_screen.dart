@@ -57,9 +57,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _startTimer();
       } else if (wasRunning) {
         _startTimer();
-      } else {
-        if (mounted) setState(() {});
       }
+      
+      if (mounted) setState(() {});
     } else {
       _hasDraft = false;
       _timerTick?.cancel();
@@ -137,37 +137,126 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return max;
   }
 
-  String _getInsight() {
-    if (_sessions.isEmpty) return "Log a session to track progress";
-    if (_sessions.length == 1) return "First session logged. Keep it up!";
+  Widget _buildProgressionSummary() {
+    if (_sessions.isEmpty) return const SizedBox();
 
-    for (final s in _sessions) {
-      final exList = s['exercises'] as List? ?? [];
-      for (final ex in exList) {
-        if (ex['category'] == 'main') {
-          final liftName = ex['name'] as String;
-          final currentMax = _getMaxWeight(ex);
-          
-          final previousSessions = _sessions.where((ps) => ps['_id'] != s['_id']).toList();
-          for (final ps in previousSessions) {
-            final pExList = ps['exercises'] as List? ?? [];
-            for (final pEx in pExList) {
-              if (pEx['name'] == liftName) {
-                final prevMax = _getMaxWeight(pEx);
-                if (currentMax > prevMax) {
-                  return "$liftName +${(currentMax - prevMax).toStringAsFixed(1).replaceAll('.0', '')}kg from last session";
-                } else if (currentMax < prevMax) {
-                  return "$liftName ${(currentMax - prevMax).toStringAsFixed(1).replaceAll('.0', '')}kg from last session";
-                } else {
-                  return "Matched last session's $liftName weight";
-                }
-              }
+    final currentBlock = _sessions.first['block'] as int? ?? 1;
+    final currentWeek = int.tryParse(_sessions.first['week']?.toString() ?? '1') ?? 1;
+
+    final currentSessions = _sessions.where((s) => s['block'] == currentBlock && int.tryParse(s['week']?.toString() ?? '0') == currentWeek).toList();
+    final prevSessions = _sessions.where((s) => s['block'] == currentBlock && int.tryParse(s['week']?.toString() ?? '0') == currentWeek - 1).toList();
+
+    double getTopSet(List sessions, String liftName) {
+      double max = 0;
+      for (var s in sessions) {
+        for (var ex in (s['exercises'] as List? ?? [])) {
+          if (ex['name'] == liftName) {
+            final m = _getMaxWeight(ex);
+            if (m > max) max = m;
+          }
+        }
+      }
+      return max;
+    }
+
+    double getVolume(List sessions) {
+      double vol = 0;
+      for (var s in sessions) {
+        for (var ex in (s['exercises'] as List? ?? [])) {
+          if (['Squat', 'Bench', 'Deadlift'].contains(ex['name'])) {
+            for (var set in (ex['sets'] as List? ?? [])) {
+              final w = double.tryParse(set['weight']?.toString() ?? '0') ?? 0;
+              final r = int.tryParse(set['reps']?.toString() ?? '0') ?? 0;
+              final c = int.tryParse(set['sets']?.toString() ?? '1') ?? 1;
+              vol += w * r * c;
             }
           }
         }
       }
+      return vol;
     }
-    return "Consistent training!";
+
+    final lifts = ['Squat', 'Bench', 'Deadlift'];
+    List<Widget> liftRows = [];
+    for (var lift in lifts) {
+      final cur = getTopSet(currentSessions, lift);
+      final prev = getTopSet(prevSessions, lift);
+      if (cur == 0) continue;
+      
+      final allTimePR = double.tryParse(_prs[lift]?.toString() ?? '0') ?? 0;
+      final isPR = cur >= allTimePR && cur > 0;
+      
+      final diff = cur - prev;
+      String diffStr = '';
+      Color color = AppTheme.text500;
+      String icon = '';
+      
+      if (prev == 0) {
+        diffStr = 'Baseline';
+      } else if (diff > 0) {
+        diffStr = '+${diff.toString().replaceAll('.0', '')}kg';
+        color = AppTheme.accentGreen;
+        icon = '↑';
+      } else if (diff < 0) {
+        diffStr = '${diff.toString().replaceAll('.0', '')}kg';
+        color = AppTheme.accentRed;
+        icon = '↓';
+      } else {
+        diffStr = 'No change';
+      }
+
+      liftRows.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            children: [
+              SizedBox(width: 80, child: Text(lift, style: const TextStyle(fontSize: 14, color: AppTheme.text400, fontWeight: FontWeight.w500))),
+              Text(diffStr, style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+              const SizedBox(width: 6),
+              if (icon.isNotEmpty) Text(icon, style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.w700)),
+              if (isPR) const Padding(padding: EdgeInsets.only(left: 6), child: Text('🔥', style: TextStyle(fontSize: 14))),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (liftRows.isEmpty) return const SizedBox();
+
+    final curVol = getVolume(currentSessions);
+    final prevVol = getVolume(prevSessions);
+    String volStr = '';
+    Color volColor = AppTheme.text500;
+    if (prevVol > 0) {
+      final pct = ((curVol - prevVol) / prevVol) * 100;
+      if (pct > 0) {
+        volStr = '+${pct.toStringAsFixed(1)}%';
+        volColor = AppTheme.accentGreen;
+      } else if (pct < 0) {
+        volStr = '${pct.toStringAsFixed(1)}%';
+        volColor = AppTheme.accentRed;
+      } else {
+        volStr = '0%';
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('This Week', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.text100)),
+        const SizedBox(height: 12),
+        ...liftRows,
+        if (volStr.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Text('Volume ', style: TextStyle(fontSize: 14, color: AppTheme.text400, fontWeight: FontWeight.w500)),
+              Text(volStr, style: TextStyle(fontSize: 14, color: volColor, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 
   void _openSessionScreen() async {
@@ -192,13 +281,154 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _buildHeader(),
               const SizedBox(height: 36),
               _buildPRRow(),
-              const SizedBox(height: 6),
-              _buildInsight(),
-              const SizedBox(height: 48),
+              const SizedBox(height: 16),
+              _buildProgressionSummary(),
+              _buildCoachInsights(),
+              const SizedBox(height: 36),
               _buildRecentSessions(),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCoachInsights() {
+    if (_sessions.isEmpty) return const SizedBox();
+
+    final insights = <String>[];
+
+    double getVolume(List sessions) {
+      double vol = 0;
+      for (var s in sessions) {
+        for (var ex in (s['exercises'] as List? ?? [])) {
+          if (['Squat', 'Bench', 'Deadlift'].contains(ex['name'])) {
+            for (var set in (ex['sets'] as List? ?? [])) {
+              final w = double.tryParse(set['weight']?.toString() ?? '0') ?? 0;
+              final r = int.tryParse(set['reps']?.toString() ?? '0') ?? 0;
+              final c = int.tryParse(set['sets']?.toString() ?? '1') ?? 1;
+              vol += w * r * c;
+            }
+          }
+        }
+      }
+      return vol;
+    }
+    
+    final currentBlock = _sessions.first['block'] as int? ?? 1;
+    final currentWeek = int.tryParse(_sessions.first['week']?.toString() ?? '1') ?? 1;
+    final currentSessions = _sessions.where((s) => s['block'] == currentBlock && int.tryParse(s['week']?.toString() ?? '0') == currentWeek).toList();
+    final prevSessions = _sessions.where((s) => s['block'] == currentBlock && int.tryParse(s['week']?.toString() ?? '0') == currentWeek - 1).toList();
+
+    // 1. Volume Drop
+    final curVol = getVolume(currentSessions);
+    final prevVol = getVolume(prevSessions);
+    if (prevVol > 0) {
+      final pct = ((curVol - prevVol) / prevVol) * 100;
+      if (pct < -15) {
+        insights.add('Volume dropping — risk of plateau');
+      }
+    }
+
+    // 2. Best Week & Trends
+    final lifts = ['Squat', 'Bench', 'Deadlift'];
+    for (var lift in lifts) {
+      if (insights.length >= 2) break; // Max 2 insights
+
+      final liftSessions = _sessions.where((s) {
+        final exs = s['exercises'] as List? ?? [];
+        return exs.any((ex) => ex['name'] == lift);
+      }).toList();
+
+      if (liftSessions.isNotEmpty) {
+        double curMax = 0;
+        for (var s in currentSessions) {
+          for (var ex in (s['exercises'] as List? ?? [])) {
+            if (ex['name'] == lift) {
+              final w = _getMaxWeight(ex);
+              if (w > curMax) curMax = w;
+            }
+          }
+        }
+
+        if (curMax > 0 && liftSessions.length > currentSessions.length) {
+          bool isBest = true;
+          final sixWeeksAgoDate = DateTime.now().subtract(const Duration(days: 42));
+          for (var s in liftSessions) {
+            final dateStr = s['date']?.toString() ?? '';
+            final d = DateTime.tryParse(dateStr);
+            if (d == null) continue;
+            if (d.isBefore(sixWeeksAgoDate)) break;
+            
+            if (!(s['block'] == currentBlock && int.tryParse(s['week']?.toString() ?? '0') == currentWeek)) {
+              for (var ex in (s['exercises'] as List? ?? [])) {
+                if (ex['name'] == lift) {
+                  final w = _getMaxWeight(ex);
+                  if (w >= curMax) {
+                    isBest = false;
+                    break;
+                  }
+                }
+              }
+            }
+            if (!isBest) break;
+          }
+          if (isBest && insights.length < 2) {
+            insights.add('Best $lift week in last 6 weeks 🔥');
+            continue;
+          }
+        }
+
+        if (insights.length < 2 && liftSessions.length >= 3) {
+          double w1 = 0, w2 = 0, w3 = 0;
+          
+          for (var ex in (liftSessions[0]['exercises'] as List? ?? [])) {
+            if (ex['name'] == lift) w3 = _getMaxWeight(ex);
+          }
+          for (var ex in (liftSessions[1]['exercises'] as List? ?? [])) {
+            if (ex['name'] == lift) w2 = _getMaxWeight(ex);
+          }
+          for (var ex in (liftSessions[2]['exercises'] as List? ?? [])) {
+            if (ex['name'] == lift) w1 = _getMaxWeight(ex);
+          }
+          
+          if (w1 > 0 && w2 > 0 && w3 > 0) {
+            if (w1 < w2 && w2 < w3) {
+              insights.add('$lift trending up for 3 sessions 📈');
+            } else if (w1 > w2 && w2 > w3) {
+              insights.add('$lift trending down — check recovery 📉');
+            }
+          }
+        }
+      }
+    }
+
+    if (insights.isEmpty && currentSessions.length >= 3) {
+      insights.add('Consistent training this week. Keep it up!');
+    }
+
+    if (insights.isEmpty) return const SizedBox();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: insights.map((insight) => Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.auto_awesome, size: 14, color: AppTheme.accentAmber),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  insight,
+                  style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        )).toList(),
       ),
     );
   }
@@ -298,14 +528,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ],
     );
   }
-
-  Widget _buildInsight() {
-    return Text(
-      _getInsight(),
-      style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w500),
-    );
-  }
-
   Widget _buildRecentSessions() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -402,31 +624,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
         widgets.add(
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'W$wText $dText',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.text500),
-                      ),
-                      const TextSpan(
-                        text: '   ', // Spacing instead of a dot, based on the prompt "W3 D1   Squat / Bench"
-                      ),
-                      TextSpan(
-                        text: liftNames.isEmpty ? 'Accessories only' : liftNames,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100),
-                      ),
-                    ],
+            child: _ExpandableRecentSession(
+              session: session,
+              header: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RichText(
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'W$wText $dText',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.text500),
+                        ),
+                        const TextSpan(text: '   '),
+                        TextSpan(
+                          text: liftNames.isEmpty ? 'Accessories only' : liftNames,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                if (weights.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(weights, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text400, fontFamily: 'monospace')),
+                  if (weights.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(weights, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text400, fontFamily: 'monospace')),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         );
@@ -446,5 +669,90 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     return widgets;
+  }
+}
+
+class _ExpandableRecentSession extends StatefulWidget {
+  final Map<String, dynamic> session;
+  final Widget header;
+
+  const _ExpandableRecentSession({required this.session, required this.header});
+
+  @override
+  State<_ExpandableRecentSession> createState() => _ExpandableRecentSessionState();
+}
+
+class _ExpandableRecentSessionState extends State<_ExpandableRecentSession> {
+  bool _expanded = false;
+
+  Widget _buildCompactExerciseRow(dynamic ex) {
+    final cat = ex['category'];
+    Color color = AppTheme.accentGreen;
+    if (cat == 'main') color = AppTheme.accentRed;
+    else if (cat == 'secondary') color = AppTheme.accentBlue;
+
+    final sets = ex['sets'] as List? ?? [];
+    
+    final setsDisplay = sets.map((s) {
+      final w = s['weight'];
+      final r = s['reps'];
+      final c = s['sets'] ?? 1;
+      final wStr = w.toString().replaceAll('.0', '');
+      if (c is int && c > 1 || c is String && int.tryParse(c) != null && int.parse(c) > 1) {
+        return '$c × $wStr kg × $r reps';
+      }
+      return '$wStr kg × $r reps';
+    }).join('\n');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            ex['name'],
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color, letterSpacing: 0.3),
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (setsDisplay.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.only(left: 10),
+              decoration: const BoxDecoration(
+                border: Border(left: BorderSide(color: AppTheme.bg800, width: 2)),
+              ),
+              child: Text(
+                setsDisplay,
+                style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontFamily: 'monospace', height: 1.4),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final exercises = widget.session['exercises'] as List? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(6),
+          child: widget.header,
+        ),
+        if (_expanded && exercises.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: exercises.map((ex) => _buildCompactExerciseRow(ex)).toList(),
+            ),
+          ),
+      ],
+    );
   }
 }
