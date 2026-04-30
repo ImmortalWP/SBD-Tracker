@@ -137,7 +137,137 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return max;
   }
 
-  Widget _buildProgressionSummary() {
+  void _openSessionScreen() async {
+    final reload = await Navigator.push(context, MaterialPageRoute(builder: (_) => const AddSessionScreen()));
+    if (reload == true) {
+      _loadData();
+    }
+    _checkDraft();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B0B0B),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadData,
+          color: AppTheme.accentRed,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            children: [
+              _buildGreeting(),
+              const SizedBox(height: 24),
+              _buildNextSessionCard(),
+              _buildSBDStatsCard(),
+              _buildProgressionCard(),
+              _buildRecentSessionsCard(),
+              const SizedBox(height: 40),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGreeting() {
+    final auth = context.read<AuthService>();
+    final username = auth.username ?? 'Lifter';
+    
+    final hour = DateTime.now().hour;
+    String greeting = 'Good evening';
+    if (hour < 12) greeting = 'Good morning';
+    else if (hour < 17) greeting = 'Good afternoon';
+
+    return Text(
+      '$greeting, $username 👋',
+      style: const TextStyle(fontSize: 16, color: AppTheme.text400, fontWeight: FontWeight.w500),
+    );
+  }
+
+  Widget _buildNextSessionCard() {
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.accentRed.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.calendar_today_rounded, color: AppTheme.accentRed, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Next Session', style: TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                    const SizedBox(height: 4),
+                    Text(
+                      _hasDraft ? 'Workout in progress' : 'Ready to train',
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (_hasDraft) ...[
+            const SizedBox(height: 20),
+            Center(child: Text(_timerDisplay, style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: Colors.white, fontFamily: 'monospace', letterSpacing: 2))),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                elevation: 0,
+              ),
+              onPressed: _openSessionScreen,
+              child: Text(
+                _hasDraft ? 'Continue Workout' : 'Start Session',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSBDStatsCard() {
+    final s = _prs['Squat'] ?? 0;
+    final b = _prs['Bench'] ?? 0;
+    final d = _prs['Deadlift'] ?? 0;
+    final total = s + b + d;
+
+    return SectionCard(
+      title: 'Your Maxes',
+      icon: const Icon(Icons.emoji_events_outlined, color: AppTheme.text400, size: 18),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _StatItem(label: 'Squat', value: s, icon: Icons.fitness_center),
+          Container(width: 1, height: 40, color: const Color(0xFF222222)),
+          _StatItem(label: 'Bench', value: b, icon: Icons.airline_seat_flat),
+          Container(width: 1, height: 40, color: const Color(0xFF222222)),
+          _StatItem(label: 'Deadlift', value: d, icon: Icons.accessibility_new),
+          Container(width: 1, height: 40, color: const Color(0xFF222222)),
+          _StatItem(label: 'Total', value: total, icon: Icons.functions, color: AppTheme.accentAmber),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressionCard() {
     if (_sessions.isEmpty) return const SizedBox();
 
     final currentBlock = _sessions.first['block'] as int? ?? 1;
@@ -176,583 +306,338 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return vol;
     }
 
-    final lifts = ['Squat', 'Bench', 'Deadlift'];
-    List<Widget> liftRows = [];
-    for (var lift in lifts) {
-      final cur = getTopSet(currentSessions, lift);
-      final prev = getTopSet(prevSessions, lift);
-      if (cur == 0) continue;
-      
-      final allTimePR = double.tryParse(_prs[lift]?.toString() ?? '0') ?? 0;
-      final isPR = cur >= allTimePR && cur > 0;
-      
-      final diff = cur - prev;
-      String diffStr = '';
-      Color color = AppTheme.text500;
-      String icon = '';
-      
-      if (prev == 0) {
-        diffStr = 'Baseline';
-      } else if (diff > 0) {
-        diffStr = '+${diff.toString().replaceAll('.0', '')}kg';
-        color = AppTheme.accentGreen;
-        icon = '↑';
-      } else if (diff < 0) {
-        diffStr = '${diff.toString().replaceAll('.0', '')}kg';
-        color = AppTheme.accentRed;
-        icon = '↓';
-      } else {
-        diffStr = 'No change';
-      }
-
-      liftRows.add(
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
-            children: [
-              SizedBox(width: 80, child: Text(lift, style: const TextStyle(fontSize: 14, color: AppTheme.text400, fontWeight: FontWeight.w500))),
-              Text(diffStr, style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
-              const SizedBox(width: 6),
-              if (icon.isNotEmpty) Text(icon, style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.w700)),
-              if (isPR) const Padding(padding: EdgeInsets.only(left: 6), child: Text('🔥', style: TextStyle(fontSize: 14))),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (liftRows.isEmpty) return const SizedBox();
-
     final curVol = getVolume(currentSessions);
     final prevVol = getVolume(prevSessions);
-    String volStr = '';
-    Color volColor = AppTheme.text500;
-    if (prevVol > 0) {
-      final pct = ((curVol - prevVol) / prevVol) * 100;
-      if (pct > 0) {
-        volStr = '+${pct.toStringAsFixed(1)}%';
-        volColor = AppTheme.accentGreen;
-      } else if (pct < 0) {
-        volStr = '${pct.toStringAsFixed(1)}%';
-        volColor = AppTheme.accentRed;
-      } else {
-        volStr = '0%';
-      }
-    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('This Week', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.text100)),
-        const SizedBox(height: 12),
-        ...liftRows,
-        if (volStr.isNotEmpty) ...[
-          const SizedBox(height: 6),
+    return SectionCard(
+      title: 'This Week',
+      icon: const Icon(Icons.trending_up_rounded, color: AppTheme.text400, size: 18),
+      child: Column(
+        children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              const Text('Volume ', style: TextStyle(fontSize: 14, color: AppTheme.text400, fontWeight: FontWeight.w500)),
-              Text(volStr, style: TextStyle(fontSize: 14, color: volColor, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+              _buildProgressStat('Squat', getTopSet(currentSessions, 'Squat'), getTopSet(prevSessions, 'Squat'), 'kg'),
+              Container(width: 1, height: 40, color: const Color(0xFF222222)),
+              _buildProgressStat('Bench', getTopSet(currentSessions, 'Bench'), getTopSet(prevSessions, 'Bench'), 'kg'),
+              Container(width: 1, height: 40, color: const Color(0xFF222222)),
+              _buildProgressStat('Volume', curVol, prevVol, '%', isPercentage: true),
+              Container(width: 1, height: 40, color: const Color(0xFF222222)),
+              Expanded(child: _buildInsight(currentSessions, prevSessions, curVol, prevVol)),
             ],
           ),
         ],
-      ],
-    );
-  }
-
-  void _openSessionScreen() async {
-    final reload = await Navigator.push(context, MaterialPageRoute(builder: (_) => const AddSessionScreen()));
-    if (reload == true) {
-      _loadData();
-    }
-    _checkDraft();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.bg950,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _loadData,
-          color: AppTheme.accentRed,
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 36),
-              _buildPRRow(),
-              const SizedBox(height: 16),
-              _buildProgressionSummary(),
-              _buildCoachInsights(),
-              const SizedBox(height: 36),
-              _buildRecentSessions(),
-            ],
-          ),
-        ),
       ),
     );
   }
 
-  Widget _buildCoachInsights() {
-    if (_sessions.isEmpty) return const SizedBox();
+  Widget _buildProgressStat(String label, double cur, double prev, String unit, {bool isPercentage = false}) {
+    if (cur == 0 && prev == 0) return _ProgressItem(label: label, diffStr: '-', color: AppTheme.text500, icon: null);
 
-    final insights = <String>[];
+    final diff = cur - prev;
+    String diffStr;
+    Color color;
+    IconData? icon;
 
-    double getVolume(List sessions) {
-      double vol = 0;
-      for (var s in sessions) {
-        for (var ex in (s['exercises'] as List? ?? [])) {
-          if (['Squat', 'Bench', 'Deadlift'].contains(ex['name'])) {
-            for (var set in (ex['sets'] as List? ?? [])) {
-              final w = double.tryParse(set['weight']?.toString() ?? '0') ?? 0;
-              final r = int.tryParse(set['reps']?.toString() ?? '0') ?? 0;
-              final c = int.tryParse(set['sets']?.toString() ?? '1') ?? 1;
-              vol += w * r * c;
-            }
-          }
-        }
+    if (prev == 0) {
+      diffStr = '-';
+      color = AppTheme.text500;
+    } else if (isPercentage) {
+      final pct = ((cur - prev) / prev) * 100;
+      if (pct > 0) {
+        diffStr = '+${pct.toStringAsFixed(1)}%';
+        color = AppTheme.accentGreen;
+        icon = Icons.arrow_circle_up_rounded;
+      } else if (pct < 0) {
+        diffStr = '${pct.toStringAsFixed(1)}%';
+        color = AppTheme.accentRed;
+        icon = Icons.arrow_circle_down_rounded;
+      } else {
+        diffStr = '0%';
+        color = AppTheme.text500;
       }
-      return vol;
+    } else {
+      if (diff > 0) {
+        diffStr = '+${diff.toString().replaceAll('.0', '')}$unit';
+        color = AppTheme.accentGreen;
+        icon = Icons.arrow_circle_up_rounded;
+      } else if (diff < 0) {
+        diffStr = '${diff.toString().replaceAll('.0', '')}$unit';
+        color = AppTheme.accentRed;
+        icon = Icons.arrow_circle_down_rounded;
+      } else {
+        diffStr = '0$unit';
+        color = AppTheme.text500;
+      }
     }
-    
-    final currentBlock = _sessions.first['block'] as int? ?? 1;
-    final currentWeek = int.tryParse(_sessions.first['week']?.toString() ?? '1') ?? 1;
-    final currentSessions = _sessions.where((s) => s['block'] == currentBlock && int.tryParse(s['week']?.toString() ?? '0') == currentWeek).toList();
-    final prevSessions = _sessions.where((s) => s['block'] == currentBlock && int.tryParse(s['week']?.toString() ?? '0') == currentWeek - 1).toList();
 
-    // 1. Volume Drop
-    final curVol = getVolume(currentSessions);
-    final prevVol = getVolume(prevSessions);
+    return _ProgressItem(label: label, diffStr: diffStr, color: color, icon: icon);
+  }
+
+  Widget _buildInsight(List currentSessions, List prevSessions, double curVol, double prevVol) {
+    String title = 'Consistent';
+    String subtitle = 'Keep it up';
+    Color color = AppTheme.text500;
+    IconData icon = Icons.check_circle_outline;
+
     if (prevVol > 0) {
       final pct = ((curVol - prevVol) / prevVol) * 100;
       if (pct < -15) {
-        insights.add('Volume dropping — risk of plateau');
+        title = 'Volume dropping';
+        subtitle = 'Risk of plateau';
+        color = AppTheme.accentAmber;
+        icon = Icons.warning_amber_rounded;
+      } else if (pct > 20) {
+        title = 'High volume';
+        subtitle = 'Watch recovery';
+        color = AppTheme.accentAmber;
+        icon = Icons.warning_amber_rounded;
       }
     }
-
-    // 2. Best Week & Trends
-    final lifts = ['Squat', 'Bench', 'Deadlift'];
-    for (var lift in lifts) {
-      if (insights.length >= 2) break; // Max 2 insights
-
-      final liftSessions = _sessions.where((s) {
-        final exs = s['exercises'] as List? ?? [];
-        return exs.any((ex) => ex['name'] == lift);
-      }).toList();
-
-      if (liftSessions.isNotEmpty) {
-        double curMax = 0;
-        for (var s in currentSessions) {
-          for (var ex in (s['exercises'] as List? ?? [])) {
-            if (ex['name'] == lift) {
-              final w = _getMaxWeight(ex);
-              if (w > curMax) curMax = w;
-            }
-          }
-        }
-
-        if (curMax > 0 && liftSessions.length > currentSessions.length) {
-          bool isBest = true;
-          final sixWeeksAgoDate = DateTime.now().subtract(const Duration(days: 42));
-          for (var s in liftSessions) {
-            final dateStr = s['date']?.toString() ?? '';
-            final d = DateTime.tryParse(dateStr);
-            if (d == null) continue;
-            if (d.isBefore(sixWeeksAgoDate)) break;
-            
-            if (!(s['block'] == currentBlock && int.tryParse(s['week']?.toString() ?? '0') == currentWeek)) {
-              for (var ex in (s['exercises'] as List? ?? [])) {
-                if (ex['name'] == lift) {
-                  final w = _getMaxWeight(ex);
-                  if (w >= curMax) {
-                    isBest = false;
-                    break;
-                  }
-                }
-              }
-            }
-            if (!isBest) break;
-          }
-          if (isBest && insights.length < 2) {
-            insights.add('Best $lift week in last 6 weeks 🔥');
-            continue;
-          }
-        }
-
-        if (insights.length < 2 && liftSessions.length >= 3) {
-          double w1 = 0, w2 = 0, w3 = 0;
-          
-          for (var ex in (liftSessions[0]['exercises'] as List? ?? [])) {
-            if (ex['name'] == lift) w3 = _getMaxWeight(ex);
-          }
-          for (var ex in (liftSessions[1]['exercises'] as List? ?? [])) {
-            if (ex['name'] == lift) w2 = _getMaxWeight(ex);
-          }
-          for (var ex in (liftSessions[2]['exercises'] as List? ?? [])) {
-            if (ex['name'] == lift) w1 = _getMaxWeight(ex);
-          }
-          
-          if (w1 > 0 && w2 > 0 && w3 > 0) {
-            if (w1 < w2 && w2 < w3) {
-              insights.add('$lift trending up for 3 sessions 📈');
-            } else if (w1 > w2 && w2 > w3) {
-              insights.add('$lift trending down — check recovery 📉');
-            }
-          }
-        }
-      }
-    }
-
-    if (insights.isEmpty && currentSessions.length >= 3) {
-      insights.add('Consistent training this week. Keep it up!');
-    }
-
-    if (insights.isEmpty) return const SizedBox();
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: insights.map((insight) => Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.auto_awesome, size: 14, color: AppTheme.accentAmber),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  insight,
-                  style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w500),
-                ),
-              ),
-            ],
-          ),
-        )).toList(),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    final auth = context.read<AuthService>();
-    final username = auth.username ?? 'Lifter';
-    
-    final hour = DateTime.now().hour;
-    String greeting = 'Good evening';
-    if (hour < 12) greeting = 'Good morning';
-    else if (hour < 17) greeting = 'Good afternoon';
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('$greeting, $username', style: const TextStyle(fontSize: 16, color: AppTheme.text400, fontWeight: FontWeight.w500)),
-        const SizedBox(height: 24),
-        
-        if (_hasDraft) ...[
-          const Text('Workout in progress', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.text50)),
-          const SizedBox(height: 6),
-          Text(_timerDisplay, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppTheme.accentGreen, fontFamily: 'monospace', letterSpacing: 2)),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.accentGreen,
-                foregroundColor: AppTheme.bg950,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                elevation: 0,
-              ),
-              onPressed: _openSessionScreen,
-              child: const Text('Continue Workout', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            ),
-          )
-        ] else ...[
-          const Text('Next Session', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.text50)),
-          const SizedBox(height: 6),
-          const Text('Ready to train', style: TextStyle(fontSize: 15, color: AppTheme.text500)),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.text50,
-                foregroundColor: AppTheme.bg950,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                elevation: 0,
-              ),
-              onPressed: _openSessionScreen,
-              child: const Text('Start Session', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-            ),
-          )
-        ],
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 8),
+        Text(title, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 2),
+        Text(subtitle, style: const TextStyle(fontSize: 10, color: AppTheme.text500), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
       ],
     );
   }
 
-  Widget _buildPRRow() {
-    final s = _prs['Squat'] ?? 0;
-    final b = _prs['Bench'] ?? 0;
-    final d = _prs['Deadlift'] ?? 0;
-    final total = s + b + d;
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
+  Widget _buildRecentSessionsCard() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _prText('S', s),
-        _prText('B', b),
-        _prText('D', d),
-        const Text('|', style: TextStyle(color: AppTheme.text600, fontSize: 16, fontWeight: FontWeight.w400)),
         Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('Total ', style: TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w600)),
-            Text('${total}kg', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.text100)),
+            Row(
+              children: [
+                const Icon(Icons.history_rounded, color: AppTheme.text400, size: 18),
+                const SizedBox(width: 8),
+                const Text('Recent Sessions', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+              ],
+            ),
+            GestureDetector(
+              onTap: () => context.findAncestorStateOfType<MainShellState>()?.switchTab(1),
+              child: const Text('View all', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.accentRed)),
+            ),
           ],
         ),
-      ],
-    );
-  }
-
-  Widget _prText(String label, num value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
-      children: [
-        Text('$label ', style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w600)),
-        Text(value.toString().replaceAll('.0', ''), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.text100)),
-      ],
-    );
-  }
-  Widget _buildRecentSessions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Recent Sessions', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.text100)),
         const SizedBox(height: 16),
-        
         if (_loading && _sessions.isEmpty)
-          const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: AppTheme.text500, strokeWidth: 2)))
+          const Center(child: CircularProgressIndicator(color: AppTheme.text500, strokeWidth: 2))
         else if (_sessions.isEmpty)
           const Text('No sessions logged yet.', style: TextStyle(color: AppTheme.text600, fontSize: 14))
-        else ..._buildRecentSessionsList()
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF161616),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF222222)),
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _sessions.length > 5 ? 5 : _sessions.length,
+              separatorBuilder: (ctx, idx) => const Divider(color: Color(0xFF222222), height: 1),
+              itemBuilder: (ctx, idx) {
+                final session = _sessions[idx];
+                return _SessionTile(session: session, getMaxWeight: _getMaxWeight);
+              },
+            ),
+          )
       ],
     );
   }
-
-  List<Widget> _buildRecentSessionsList() {
-    final now = DateTime.now();
-    
-    final recent = _sessions.where((s) {
-      if (s['date'] == null) return false;
-      final d = DateTime.tryParse(s['date'].toString());
-      if (d == null) return false;
-      // Keep sessions from exactly now down to 7 days ago, ignoring time of day differences by just checking the date difference loosely or using isAfter
-      // A safe check: difference in days <= 7
-      final diff = now.difference(d).inDays;
-      return diff >= 0 && diff <= 7;
-    }).toList();
-
-    if (recent.isEmpty) {
-      return [const Text('No sessions in the last 7 days.', style: TextStyle(color: AppTheme.text600, fontSize: 14))];
-    }
-
-    final Map<int, List<dynamic>> grouped = {};
-    for (var s in recent) {
-      final block = s['block'] as int? ?? 0;
-      grouped.putIfAbsent(block, () => []).add(s);
-    }
-
-    final Map<String, int> dayOrder = {
-      'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3,
-      'Thursday': 4, 'Friday': 5, 'Saturday': 6,
-    };
-
-    final widgets = <Widget>[];
-    for (var entry in grouped.entries) {
-      final sessionsInBlock = entry.value;
-      sessionsInBlock.sort((a, b) {
-        final wa = int.tryParse(a['week']?.toString() ?? '0') ?? 0;
-        final wb = int.tryParse(b['week']?.toString() ?? '0') ?? 0;
-        if (wa != wb) return wb.compareTo(wa); // descending week
-
-        final da = dayOrder[a['day']?.toString()] ?? 99;
-        final db = dayOrder[b['day']?.toString()] ?? 99;
-        return da.compareTo(db); // ascending day
-      });
-
-      widgets.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Block ${entry.key}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100)),
-              const SizedBox(height: 6),
-              const Divider(color: AppTheme.bg800, height: 1),
-            ],
-          ),
-        ),
-      );
-
-      for (var session in sessionsInBlock) {
-        final exercises = session['exercises'] as List? ?? [];
-        final mainLifts = exercises.where((e) => e['category'] == 'main' || e['category'] == 'secondary').toList();
-        
-        final liftNames = mainLifts.map((e) => e['name']).join(' / ');
-        
-        final weights = mainLifts.map((ex) {
-          final pct = ex['percentage'];
-          final maxW = _getMaxWeight(ex);
-          final wStr = '${maxW.toString().replaceAll('.0', '')}kg';
-          
-          if (pct != null && pct.toString().isNotEmpty && ex['category'] == 'main') {
-            return '$pct% • $wStr';
-          }
-          return wStr;
-        }).join(' • ');
-
-        final wText = session['week']?.toString() ?? '-';
-        // Format Day safely: if it's a number string like "1", show "D1". If it's "Monday", show "Monday".
-        String dText = session['day']?.toString() ?? '-';
-        if (int.tryParse(dText) != null) dText = 'D$dText';
-
-        widgets.add(
-          Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: _ExpandableRecentSession(
-              session: session,
-              header: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: 'W$wText $dText',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.text500),
-                        ),
-                        const TextSpan(text: '   '),
-                        TextSpan(
-                          text: liftNames.isEmpty ? 'Accessories only' : liftNames,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.text100),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (weights.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(weights, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text400, fontFamily: 'monospace')),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        );
-      }
-    }
-
-    widgets.add(const SizedBox(height: 8));
-    widgets.add(
-      Center(
-        child: TextButton(
-          onPressed: () {
-            context.findAncestorStateOfType<MainShellState>()?.switchTab(1);
-          },
-          child: const Text('View All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.text500)),
-        ),
-      ),
-    );
-
-    return widgets;
-  }
 }
 
-class _ExpandableRecentSession extends StatefulWidget {
-  final Map<String, dynamic> session;
-  final Widget header;
+class SectionCard extends StatelessWidget {
+  final String? title;
+  final Widget? icon;
+  final Widget child;
 
-  const _ExpandableRecentSession({required this.session, required this.header});
-
-  @override
-  State<_ExpandableRecentSession> createState() => _ExpandableRecentSessionState();
-}
-
-class _ExpandableRecentSessionState extends State<_ExpandableRecentSession> {
-  bool _expanded = false;
-
-  Widget _buildCompactExerciseRow(dynamic ex) {
-    final cat = ex['category'];
-    Color color = AppTheme.accentGreen;
-    if (cat == 'main') color = AppTheme.accentRed;
-    else if (cat == 'secondary') color = AppTheme.accentBlue;
-
-    final sets = ex['sets'] as List? ?? [];
-    
-    final setsDisplay = sets.map((s) {
-      final w = s['weight'];
-      final r = s['reps'];
-      final c = s['sets'] ?? 1;
-      final wStr = w.toString().replaceAll('.0', '');
-      if (c is int && c > 1 || c is String && int.tryParse(c) != null && int.parse(c) > 1) {
-        return '$c × $wStr kg × $r reps';
-      }
-      return '$wStr kg × $r reps';
-    }).join('\n');
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            ex['name'],
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color, letterSpacing: 0.3),
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (setsDisplay.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.only(left: 10),
-              decoration: const BoxDecoration(
-                border: Border(left: BorderSide(color: AppTheme.bg800, width: 2)),
-              ),
-              child: Text(
-                setsDisplay,
-                style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontFamily: 'monospace', height: 1.4),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
+  const SectionCard({super.key, this.title, this.icon, required this.child});
 
   @override
   Widget build(BuildContext context) {
-    final exercises = widget.session['exercises'] as List? ?? [];
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161616),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF222222)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (title != null) ...[
+            Row(
+              children: [
+                if (icon != null) ...[icon!, const SizedBox(width: 8)],
+                Text(title!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
+          child,
+        ],
+      ),
+    );
+  }
+}
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
-          borderRadius: BorderRadius.circular(6),
-          child: widget.header,
-        ),
-        if (_expanded && exercises.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 8),
+class _StatItem extends StatelessWidget {
+  final String label;
+  final num value;
+  final IconData icon;
+  final Color? color;
+
+  const _StatItem({required this.label, required this.value, required this.icon, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, size: 20, color: color ?? AppTheme.text500),
+          const SizedBox(height: 8),
+          Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.text500, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
+          Text(
+            value.toString().replaceAll('.0', ''),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, fontFamily: 'monospace'),
+          ),
+          const SizedBox(height: 2),
+          const Text('kg', style: TextStyle(fontSize: 10, color: AppTheme.text600)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProgressItem extends StatelessWidget {
+  final String label;
+  final String diffStr;
+  final Color color;
+  final IconData? icon;
+
+  const _ProgressItem({required this.label, required this.diffStr, required this.color, this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.text500, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                diffStr,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: color, fontFamily: 'monospace'),
+              ),
+              if (icon != null) ...[
+                const SizedBox(width: 4),
+                Icon(icon, size: 14, color: color),
+              ]
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text('vs last week', style: TextStyle(fontSize: 10, color: AppTheme.text600)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SessionTile extends StatelessWidget {
+  final Map<String, dynamic> session;
+  final double Function(Map<String, dynamic>) getMaxWeight;
+
+  const _SessionTile({required this.session, required this.getMaxWeight});
+
+  @override
+  Widget build(BuildContext context) {
+    final exercises = session['exercises'] as List? ?? [];
+    final mainLifts = exercises.where((e) => e['category'] == 'main' || e['category'] == 'secondary').toList();
+    
+    final liftNames = mainLifts.map((e) => e['name']).join(' / ');
+    
+    final weights = mainLifts.map((ex) {
+      final pct = ex['percentage'];
+      final maxW = getMaxWeight(ex);
+      final wStr = '${maxW.toString().replaceAll('.0', '')}kg';
+      
+      if (pct != null && pct.toString().isNotEmpty && ex['category'] == 'main') {
+        return '$pct% • $wStr';
+      }
+      return wStr;
+    }).join(' • ');
+
+    final wText = session['week']?.toString() ?? '-';
+    String dText = session['day']?.toString() ?? '-';
+    
+    // Fallback simple parsing for day if it's a number string
+    if (int.tryParse(dText) != null) dText = 'D$dText';
+    // Format day name minimally e.g., "Mon"
+    if (dText.length > 3 && int.tryParse(dText) == null) {
+      dText = dText.substring(0, 3);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppTheme.bg800.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.calendar_month_outlined, color: AppTheme.text400, size: 20),
+          ),
+          const SizedBox(width: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('W$wText', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text400)),
+              const SizedBox(height: 2),
+              Text(dText, style: const TextStyle(fontSize: 11, color: AppTheme.text500)),
+            ],
+          ),
+          const SizedBox(width: 16),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: exercises.map((ex) => _buildCompactExerciseRow(ex)).toList(),
+              children: [
+                Text(
+                  liftNames.isEmpty ? 'Accessories only' : liftNames,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (weights.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    weights,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text500, fontFamily: 'monospace'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
             ),
           ),
-      ],
+          const SizedBox(width: 8),
+          const Icon(Icons.chevron_right, color: AppTheme.text600, size: 20),
+        ],
+      ),
     );
   }
 }

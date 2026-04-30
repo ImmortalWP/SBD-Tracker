@@ -223,9 +223,16 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
       ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppTheme.bg800, width: 0.5)),
+          border: Border(top: BorderSide(color: Color(0xFF1A1A1A), width: 1)),
         ),
         child: BottomNavigationBar(
+          backgroundColor: const Color(0xFF0B0B0B),
+          type: BottomNavigationBarType.fixed,
+          elevation: 0,
+          selectedItemColor: AppTheme.accentRed,
+          unselectedItemColor: AppTheme.text500,
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11, height: 1.5),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 11, height: 1.5),
           currentIndex: _currentIndex,
           onTap: (idx) {
             if (idx == 2) {
@@ -244,45 +251,51 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
             }
           },
           items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), activeIcon: Icon(Icons.dashboard), label: 'Home'),
+            BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
             BottomNavigationBarItem(icon: Icon(Icons.list_alt_outlined), activeIcon: Icon(Icons.list_alt), label: 'Sessions'),
-            BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline, size: 30), activeIcon: Icon(Icons.add_circle, size: 30), label: 'Log'),
-            BottomNavigationBarItem(icon: Icon(Icons.analytics_outlined), activeIcon: Icon(Icons.analytics), label: 'Analytics'),
+            BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline, size: 28), activeIcon: Icon(Icons.add_circle, size: 28), label: 'Log'),
+            BottomNavigationBarItem(icon: Icon(Icons.bar_chart_outlined), activeIcon: Icon(Icons.bar_chart), label: 'Analytics'),
             BottomNavigationBarItem(icon: Icon(Icons.emoji_events_outlined), activeIcon: Icon(Icons.emoji_events), label: 'Board'),
             BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Profile'),
           ],
         ),
       ),
       appBar: AppBar(
+        backgroundColor: const Color(0xFF0B0B0B),
+        elevation: 0,
+        titleSpacing: 24,
         title: Row(
           children: [
             Container(
               width: 32, height: 32,
               decoration: BoxDecoration(
-                color: AppTheme.accentRed.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.25)),
+                color: AppTheme.accentRed.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.3)),
               ),
               child: const Icon(Icons.fitness_center, color: AppTheme.accentRed, size: 16),
             ),
-            const SizedBox(width: 10),
-            const Text('SBD', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+            const SizedBox(width: 12),
+            const Text('SBD', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20, letterSpacing: -0.5, color: Colors.white)),
           ],
         ),
         actions: [
           if (auth.username != null)
             Container(
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              margin: const EdgeInsets.only(right: 24, top: 12, bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                color: AppTheme.bg800.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(8),
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Center(
-                child: Text(auth.username!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text400)),
+              child: Row(
+                children: [
+                  const Icon(Icons.person_outline, size: 14, color: AppTheme.text400),
+                  const SizedBox(width: 6),
+                  Text(auth.username!, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.text300)),
+                ],
               ),
             ),
-          const SizedBox(width: 8),
         ],
       ),
     );
