@@ -22,10 +22,13 @@ const SessionSchema = new mongoose.Schema(
     day: { type: String, required: true },
     date: { type: Date, default: Date.now },
     duration: { type: Number },
+    durationInMinutes: { type: Number },
     startTime: { type: String },
     endTime: { type: String },
     exercises: [ExerciseSchema],
     notes: { type: String, default: '' },
+    note: { type: String, default: '' },
+    intensity: { type: Number },
   },
   { timestamps: true }
 );

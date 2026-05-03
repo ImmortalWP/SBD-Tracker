@@ -1,11 +1,26 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/offline_queue.dart';
 import '../services/draft_service.dart';
 import '../theme/app_theme.dart';
 import 'package:intl/intl.dart';
+
+// Dark Blue Theme Constants
+const Color _bg = Color(0xFF090D14);
+const Color _cardBg = Color(0xFF151923);
+const Color _inputBg = Color(0xFF11141D); // Input slightly darker than card
+const Color _borderColor = Color(0xFF222836);
+const Color _textPrimary = Colors.white;
+const Color _textSecondary = Color(0xFF94A3B8);
+const Color _textMuted = Color(0xFF475569);
+const Color _accentBlue = Color(0xFF2563EB);
+const Color _accentBlueBg = Color(0xFF172554);
+const Color _accentGreen = Color(0xFF22C55E);
+const Color _accentRed = Color(0xFFEF4444);
 
 class AddSessionScreen extends StatefulWidget {
   final Map<String, dynamic>? existingSession;
@@ -20,19 +35,18 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   final _weekCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
-  String _day = 'Sunday';
+  String _day = 'Monday';
   String _date = DateFormat('yyyy-MM-dd').format(DateTime.now());
   bool _loading = false;
   String _error = '';
 
-  // Timer
-  int _elapsedSeconds = 0;
+  int _accumulatedSeconds = 0;
+  DateTime? _timerStartTime;
   Timer? _timerTick;
   bool _timerRunning = false;
-  DateTime? _lastTickTime;
 
-  // Auto-save
   Timer? _autoSaveTimer;
+  List<dynamic> _allSessionsCache = [];
 
   final _days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   final _mainLifts = ['Squat', 'Bench', 'Deadlift'];
@@ -46,11 +60,12 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   List<String> get _allSecondaryLifts => _secondaryLifts.values.expand((e) => e).toList();
 
   static const Map<String, List<String>> _accessoryLifts = {
-    'Back': ['Barbell Row', 'Pendlay Row', 'Lat Pulldown', 'Pull Up', 'Chin Up', 'Cable Row', 'Dumbbell Row', 'T-Bar Row', 'Face Pull'],
-    'Shoulders': ['OHP', 'Dumbbell Press', 'Lateral Raise', 'Rear Delt Fly', 'Front Raise'],
-    'Arms': ['Barbell Curl', 'Dumbbell Curl', 'Hammer Curl', 'Tricep Pushdown', 'Skull Crusher', 'Close Grip Press', 'Overhead Extension'],
-    'Legs': ['Leg Press', 'Leg Extension', 'Leg Curl', 'Bulgarian Split Squat', 'Hip Thrust'],
+    'Back': ['Barbell Row', 'Pendlay Row', 'Lat Pulldown', 'Pull Up', 'Chin Up', 'Cable Row', 'Dumbbell Row', 'T-Bar Row', 'Face Pull', 'Chest Supported Row'],
+    'Shoulders': ['OHP', 'Dumbbell Press', 'Lateral Raise', 'Rear Delt Fly', 'Front Raise', 'Overhead Press'],
+    'Arms': ['Barbell Curl', 'Dumbbell Curl', 'Hammer Curl', 'Tricep Pushdown', 'Skull Crusher', 'Close Grip Press', 'Overhead Extension', 'Bicep Curl'],
+    'Legs': ['Leg Press', 'Leg Extension', 'Leg Curl', 'Hamstring Curl', 'Bulgarian Split Squat', 'Hip Thrust', 'Romanian Deadlift'],
     'Core': ['Plank', 'Ab Wheel', 'Cable Crunch', 'Hanging Leg Raise'],
+    'Chest': ['Incline Bench Press', 'Close Grip Bench Press', 'Cable Fly'],
   };
 
   List<String> get _allAccessoryLifts => _accessoryLifts.values.expand((e) => e).toList();
@@ -58,7 +73,6 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   List<String> _dynamicAccessories = [];
   bool _isDiscarding = false;
 
-  // Each exercise: { name, category, pctCtrl, sets: [ {wCtrl, sCtrl, rCtrl} ] }
   final List<_ExData> _exercises = [];
 
   bool get _isEditing => widget.existingSession != null;
@@ -67,16 +81,27 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadAllSessions();
     if (_isEditing) {
       _loadExisting();
     } else {
       _tryLoadDraft();
     }
-    // Auto-save draft every 5 seconds
     if (!_isEditing) {
       _autoSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) => _saveDraftSilent());
     }
     _fetchDynamicAccessories();
+  }
+
+  Future<void> _loadAllSessions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString('cache_dashboard');
+      if (cached != null) {
+        final data = jsonDecode(cached);
+        _allSessionsCache = data['sessions'] ?? [];
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchDynamicAccessories() async {
@@ -89,7 +114,6 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
           if (ex['category'] == 'accessory' && ex['name'] != null) {
             final name = ex['name'].toString().trim();
             if (name.isNotEmpty) {
-              // Check case-insensitive
               bool exists = uniqueAccessories.any((e) => e.toLowerCase() == name.toLowerCase());
               bool inStatic = _allAccessoryLifts.any((e) => e.toLowerCase() == name.toLowerCase());
               if (!exists && !inStatic) {
@@ -107,25 +131,55 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     } catch (_) {}
   }
 
+  void _tryLoadPreviousSessionForDay(String day) {
+    if (_isEditing) return; // Don't auto-load if we are explicitly editing an old session
+    if (_allSessionsCache.isEmpty) return;
+
+    final pastSessions = _allSessionsCache.where((s) => s['day'] == day).toList();
+    if (pastSessions.isEmpty) return;
+
+    // Get the most recent one (they are sorted descending by date from the API)
+    final lastSession = pastSessions.first;
+    final pastExercises = lastSession['exercises'] as List? ?? [];
+    if (pastExercises.isEmpty) return;
+
+    setState(() {
+      _exercises.clear();
+      for (final ex in pastExercises) {
+        _exercises.add(_ExData.fromMap(ex as Map<String, dynamic>));
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Loaded from last $day'),
+      backgroundColor: _accentBlueBg,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       if (!_isEditing) _saveDraftSilent();
     }
   }
 
   void _saveDraftSilent() {
     if (_isEditing || _isDiscarding) return;
-    final hasData = _blockCtrl.text.isNotEmpty || _exercises.any((e) => e.name.isNotEmpty);
-    if (hasData) _saveDraft();
+    final hasData = _exercises.any((e) => e.name.isNotEmpty);
+    if (hasData) {
+      _saveDraft();
+    } else {
+      DraftService.clearDraft();
+    }
   }
 
   void _loadExisting() {
     final s = widget.existingSession!;
     _blockCtrl.text = s['block'].toString();
     if (s['week'] != null) _weekCtrl.text = s['week'].toString();
-    _day = s['day'] ?? 'Sunday';
+    _day = s['day'] ?? 'Monday';
     if (s['date'] != null) _date = s['date'].toString().substring(0, 10);
     _notesCtrl.text = s['notes'] ?? '';
     for (final ex in (s['exercises'] as List)) {
@@ -137,22 +191,31 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     final draft = await DraftService.loadDraft();
     if (draft != null && mounted) {
       if (draft.isNotEmpty) {
-        _blockCtrl.text = draft['block']?.toString() ?? '';
-        _weekCtrl.text = draft['week']?.toString() ?? '';
-        _day = draft['day'] ?? 'Sunday';
+        _blockCtrl.text = draft['block']?.toString() ?? '1';
+        _weekCtrl.text = draft['week']?.toString() ?? '1';
+        _day = draft['day'] ?? 'Monday';
         _date = draft['date'] ?? _date;
         _notesCtrl.text = draft['notes'] ?? '';
-        _elapsedSeconds = draft['elapsedSeconds'] ?? 0;
-        final wasRunning = draft['timerRunning'] == true;
-        final lastTickStr = draft['lastTickTime'];
         
-        if (wasRunning && lastTickStr != null) {
-          final lastTick = DateTime.tryParse(lastTickStr);
-          if (lastTick != null) {
-            _elapsedSeconds += DateTime.now().difference(lastTick).inSeconds;
-          }
-          _startTimer();
-        } else if (wasRunning) {
+        _accumulatedSeconds = draft['accumulatedSeconds'] ?? 0;
+        _timerRunning = draft['timerRunning'] == true;
+        final startTimeStr = draft['timerStartTime'];
+        
+        if (_timerRunning && startTimeStr != null) {
+          _timerStartTime = DateTime.tryParse(startTimeStr);
+        } else {
+          _timerStartTime = null;
+        }
+
+        if (draft.containsKey('elapsedSeconds') && !draft.containsKey('accumulatedSeconds')) {
+           _accumulatedSeconds = draft['elapsedSeconds'];
+           final lastTickStr = draft['lastTickTime'];
+           if (_timerRunning && lastTickStr != null) {
+              _timerStartTime = DateTime.tryParse(lastTickStr);
+           }
+        }
+
+        if (_timerRunning) {
           _startTimer();
         }
 
@@ -161,104 +224,58 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
           _exercises.add(_ExData.fromMap(ex));
         }
         setState(() {});
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Resumed previous session draft'),
-            backgroundColor: AppTheme.accentGreen,
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 2),
-          ));
-        }
         return;
       }
     }
-
-    // Fresh session
+    _blockCtrl.text = '1';
+    _weekCtrl.text = '1';
     _exercises.add(_ExData.empty('main'));
     _startTimer();
   }
 
-  Future<void> _onDayChanged(String newDay) async {
-    setState(() => _day = newDay);
-    if (_isEditing) return; // Don't auto-load if editing an existing session
-
-    // Check if current session is empty
-    bool isEmpty = _exercises.isEmpty || (_exercises.length == 1 && _exercises.first.name.trim().isEmpty);
-
-    if (!isEmpty) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppTheme.bg850,
-          title: Text('Load $newDay Workout?'),
-          content: const Text('This will overwrite your current exercises with the most recent ones from this day.', style: TextStyle(color: AppTheme.text400)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: AppTheme.text500)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Load', style: TextStyle(color: AppTheme.accentGreen)),
-            ),
-          ],
-        ),
-      );
-      if (ok != true) return;
+  void _loadExerciseHistory(_ExData ex, String newName) {
+    if (newName.trim().isEmpty) {
+      ex.pastSets = null;
+      if (mounted) setState((){});
+      return;
     }
-
-    setState(() => _loading = true);
-
-    try {
-      final sessions = await ApiService.getSessions(day: newDay);
-      if (sessions.isNotEmpty) {
-        sessions.sort((a, b) {
-          final da = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime(2000);
-          final db = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(2000);
-          return db.compareTo(da);
-        });
-
-        final mostRecent = sessions.first;
-        final exList = mostRecent['exercises'] as List? ?? [];
-        if (exList.isNotEmpty) {
-          for (final ex in _exercises) {
-            ex.dispose();
-          }
-          _exercises.clear();
-          
-          for (final ex in exList) {
-            _exercises.add(_ExData.fromMap(ex));
-          }
-          
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Loaded previous $newDay workout'),
-              backgroundColor: AppTheme.accentGreen,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 2),
-            ));
-          }
+    
+    for (final session in _allSessionsCache) {
+      final exercises = session['exercises'] as List? ?? [];
+      for (final pastEx in exercises) {
+        if (pastEx['name']?.toString().toLowerCase() == newName.toLowerCase()) {
+           final sets = pastEx['sets'] as List? ?? [];
+           if (sets.isNotEmpty) {
+             ex.pastSets = List<Map<String, dynamic>>.from(sets);
+             for (final s in ex.sets) s.dispose();
+             ex.sets.clear();
+             for (final s in sets) {
+                final w = (s['weight'] ?? '').toString().replaceAll('.0','');
+                final r = (s['reps'] ?? '').toString();
+                final c = int.tryParse(s['sets']?.toString() ?? '1') ?? 1;
+                for (int i=0; i<c; i++) {
+                   ex.sets.add(_SetData(
+                     wCtrl: TextEditingController(text: w),
+                     sCtrl: TextEditingController(text: '1'),
+                     rCtrl: TextEditingController(text: r),
+                   ));
+                }
+             }
+             if (mounted) setState((){});
+           }
+           return;
         }
       }
-    } catch (e) {
-      // Ignore errors silently
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
+    ex.pastSets = null;
+    if (mounted) setState((){});
   }
 
   void _startTimer() {
     _timerRunning = true;
-    _lastTickTime = DateTime.now();
+    _timerStartTime ??= DateTime.now();
+    _timerTick?.cancel();
     _timerTick = Timer.periodic(const Duration(seconds: 1), (_) {
-      final now = DateTime.now();
-      if (_lastTickTime != null) {
-        _elapsedSeconds += now.difference(_lastTickTime!).inSeconds;
-      } else {
-        _elapsedSeconds++;
-      }
-      _lastTickTime = now;
       if (mounted) setState(() {});
     });
   }
@@ -267,26 +284,37 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     if (_timerRunning) {
       _timerTick?.cancel();
       _timerRunning = false;
-      _lastTickTime = null;
+      if (_timerStartTime != null) {
+        _accumulatedSeconds += DateTime.now().difference(_timerStartTime!).inSeconds;
+      }
+      _timerStartTime = null;
     } else {
       _startTimer();
     }
+    if (!_isEditing) _saveDraftSilent();
     setState(() {});
   }
 
+  int get _currentElapsedSeconds {
+    if (!_timerRunning || _timerStartTime == null) return _accumulatedSeconds;
+    return _accumulatedSeconds + DateTime.now().difference(_timerStartTime!).inSeconds;
+  }
+
   String get _timerDisplay {
-    final m = (_elapsedSeconds ~/ 60).toString().padLeft(2, '0');
-    final s = (_elapsedSeconds % 60).toString().padLeft(2, '0');
+    final seconds = _currentElapsedSeconds;
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
     return '$m:$s';
   }
 
   Future<bool> _onWillPop() async {
     if (_isEditing || _isDiscarding) return true;
-    final hasData = _blockCtrl.text.isNotEmpty || _exercises.any((e) => e.name.isNotEmpty);
+    final hasData = _exercises.any((e) => e.name.isNotEmpty);
+    _autoSaveTimer?.cancel();
     if (hasData) {
-      _isDiscarding = true;
-      _autoSaveTimer?.cancel();
       await _saveDraft();
+    } else {
+      await DraftService.clearDraft();
     }
     return true;
   }
@@ -295,18 +323,12 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bg850,
-        title: const Text('Discard Session?'),
-        content: const Text('All entered data will be permanently lost.', style: TextStyle(color: AppTheme.text400)),
+        backgroundColor: _cardBg,
+        title: const Text('Discard Session?', style: TextStyle(color: _textPrimary)),
+        content: const Text('All entered data will be lost.', style: TextStyle(color: _textSecondary)),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: AppTheme.text500)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Discard', style: TextStyle(color: AppTheme.accentRed)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(color: _textMuted))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Discard', style: TextStyle(color: Color(0xFFD95A5A)))),
         ],
       ),
     );
@@ -319,15 +341,16 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   }
 
   Future<void> _saveDraft() async {
+    if (_isDiscarding) return;
     await DraftService.saveDraft({
       'block': _blockCtrl.text,
       'week': _weekCtrl.text,
       'day': _day,
       'date': _date,
       'notes': _notesCtrl.text,
-      'elapsedSeconds': _elapsedSeconds,
+      'accumulatedSeconds': _accumulatedSeconds,
       'timerRunning': _timerRunning,
-      'lastTickTime': _lastTickTime?.toIso8601String(),
+      'timerStartTime': _timerStartTime?.toIso8601String(),
       'exercises': _exercises.map((e) => e.toMap()).toList(),
     });
   }
@@ -345,12 +368,11 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       for (final s in ex.sets) {
         final w = s.wCtrl.text.trim();
         final r = s.rCtrl.text.trim();
-        final st = s.sCtrl.text.trim();
         if (w.isEmpty || r.isEmpty) continue;
         sets.add({
           'weight': double.tryParse(w) ?? 0,
           'reps': int.tryParse(r) ?? 0,
-          'sets': int.tryParse(st) ?? 1,
+          'sets': int.tryParse(s.sCtrl.text.trim()) ?? 1,
         });
       }
       if (sets.isEmpty) continue;
@@ -368,14 +390,24 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       return;
     }
 
-    final durationMin = _elapsedSeconds ~/ 60;
+    final durationMin = _currentElapsedSeconds ~/ 60;
+    
+    int intensity = 0;
+    for (final ex in exercises) {
+      if (ex['percentage'] != null) {
+        final p = ex['percentage'] as int;
+        if (p > intensity) intensity = p;
+      }
+    }
+
     final payload = <String, dynamic>{
       'block': int.tryParse(_blockCtrl.text) ?? 1,
       if (_weekCtrl.text.isNotEmpty) 'week': int.tryParse(_weekCtrl.text),
       'day': _day,
       'date': _date,
-      if (durationMin > 0) 'duration': durationMin,
-      'notes': _notesCtrl.text.trim(),
+      if (durationMin > 0) 'durationInMinutes': durationMin,
+      'note': _notesCtrl.text.trim(),
+      if (intensity > 0) 'intensity': intensity,
       'exercises': exercises,
     };
 
@@ -387,6 +419,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       } else {
         await ApiService.createSession(payload);
       }
+      _isDiscarding = true;
       await DraftService.clearDraft();
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -397,11 +430,12 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
           if (_isEditing) 'sessionId': widget.existingSession!['_id'],
           'data': payload,
         });
+        _isDiscarding = true;
         await DraftService.clearDraft();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('📶 Saved offline — will sync when connected'),
-            backgroundColor: AppTheme.accentAmber, behavior: SnackBarBehavior.floating,
+            content: Text('Saved offline'),
+            backgroundColor: _cardBg, behavior: SnackBarBehavior.floating,
           ));
           Navigator.pop(context, true);
         }
@@ -423,82 +457,86 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
         if (shouldPop && context.mounted) Navigator.of(context).pop();
       },
       child: Scaffold(
-        backgroundColor: AppTheme.bg950,
+        backgroundColor: _bg,
         appBar: AppBar(
-          title: Text(_isEditing ? 'Edit Session' : 'Log Session'),
-          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () async {
+          backgroundColor: _bg,
+          elevation: 0,
+          title: Text(_isEditing ? 'Edit Session' : 'Log Session', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _textPrimary)),
+          centerTitle: true,
+          leading: IconButton(icon: const Icon(Icons.arrow_back_ios, color: _textPrimary, size: 20), onPressed: () async {
             final shouldPop = await _onWillPop();
             if (shouldPop && mounted) Navigator.pop(context);
           }),
           actions: [
             if (!_isEditing)
               IconButton(
-                icon: const Icon(Icons.delete_outline, color: AppTheme.text500, size: 20),
-                tooltip: 'Discard session',
+                icon: const Icon(Icons.more_vert, color: _textPrimary),
                 onPressed: _discardDraft,
               ),
-            TextButton(
-              onPressed: _loading ? null : _submit,
-              child: _loading
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentRed))
-                  : const Text('SAVE', style: TextStyle(color: AppTheme.accentRed, fontWeight: FontWeight.w800, fontSize: 15)),
-            ),
           ],
         ),
+        bottomNavigationBar: _buildBottomBar(),
         body: GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (_error.isNotEmpty) ...[
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: AppTheme.accentRed.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                    child: Text(_error, style: const TextStyle(color: AppTheme.accentRed, fontSize: 13)),
-                  ),
-                  const SizedBox(height: 12),
+                  Text(_error, style: const TextStyle(color: Color(0xFFD95A5A), fontSize: 13)),
+                  const SizedBox(height: 16),
                 ],
 
-                _buildMetaRow(),
-                const SizedBox(height: 32),
+                _buildTopMetadata(),
 
-                // Each exercise as its own StatefulWidget - this is the key fix
-                ..._exercises.asMap().entries.map((entry) => _ExerciseCard(
-                  key: ValueKey(entry.value.id),
-                  data: entry.value,
-                  mainLifts: _mainLifts,
-                  secondaryLifts: _secondaryLifts,
-                  accessoryLifts: _accessoryLifts,
-                  allAccessoryLifts: _allAccessoryLifts,
-                  allSecondaryLifts: _allSecondaryLifts,
-                  dynamicAccessories: _dynamicAccessories,
-                  canDelete: _exercises.length > 1,
-                  onDelete: () => setState(() {
-                    entry.value.dispose();
-                    _exercises.removeAt(entry.key);
-                  }),
-                )),
-
-                const SizedBox(height: 8),
-                Wrap(spacing: 8, runSpacing: 6, children: [
-                  _addBtn('+ Main', 'main', AppTheme.accentRed),
-                  _addBtn('+ Secondary', 'secondary', AppTheme.accentBlue),
-                  _addBtn('+ Accessory', 'accessory', AppTheme.accentGreen),
-                ]),
-                const SizedBox(height: 16),
-
-                TextField(
-                  controller: _notesCtrl,
-                  maxLines: 2,
-                  style: const TextStyle(fontSize: 14, color: AppTheme.text200),
-                  decoration: InputDecoration(
-                    labelText: 'Notes',
-                    filled: true, fillColor: AppTheme.bg850,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                  ),
+                ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  itemCount: _exercises.length,
+                  onReorder: (oldIndex, newIndex) {
+                    setState(() {
+                      if (newIndex > oldIndex) newIndex -= 1;
+                      final item = _exercises.removeAt(oldIndex);
+                      _exercises.insert(newIndex, item);
+                    });
+                  },
+                  itemBuilder: (context, index) {
+                    final ex = _exercises[index];
+                    return ReorderableDelayedDragStartListener(
+                      key: ValueKey(ex.id),
+                      index: index,
+                      child: _ExerciseCard(
+                        index: index,
+                        data: ex,
+                        mainLifts: _mainLifts,
+                        secondaryLifts: _secondaryLifts,
+                        accessoryLifts: _accessoryLifts,
+                        allAccessoryLifts: _allAccessoryLifts,
+                        allSecondaryLifts: _allSecondaryLifts,
+                        dynamicAccessories: _dynamicAccessories,
+                        canDelete: _exercises.length > 1,
+                        onDelete: () => setState(() {
+                          ex.dispose();
+                          _exercises.removeAt(index);
+                        }),
+                        onExerciseChanged: (name) => _loadExerciseHistory(ex, name),
+                      ),
+                    );
+                  },
                 ),
+
+                Row(
+                  children: [
+                    Expanded(child: _addCardBtn('Main Lift', 'main', Icons.fitness_center)),
+                    const SizedBox(width: 12),
+                    Expanded(child: _addCardBtn('Secondary', 'secondary', Icons.bolt)),
+                    const SizedBox(width: 12),
+                    Expanded(child: _addCardBtn('Accessory', 'accessory', Icons.add_circle_outline)),
+                  ]
+                ),
+                const SizedBox(height: 32),
               ],
             ),
           ),
@@ -507,48 +545,128 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     );
   }
 
-  Widget _buildMetaRow() {
-    String metaText = 'Block ${_blockCtrl.text.isEmpty ? '-' : _blockCtrl.text} • '
-        'Week ${_weekCtrl.text.isEmpty ? '-' : _weekCtrl.text} • '
-        '${_day ?? 'Day'} • $_date';
+  Widget _buildTopMetadata() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _buildOutlinedDropdown(Icons.calendar_today, _day, _showMetaEditDialog)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildOutlinedDropdown(Icons.grid_view, 'Block ${_blockCtrl.text}', _showMetaEditDialog)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildOutlinedDropdown(Icons.show_chart, 'Week ${_weekCtrl.text}', _showMetaEditDialog)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(DateFormat('E, d MMM yyyy').format(DateTime.tryParse(_date) ?? DateTime.now()), 
+                   style: const TextStyle(color: _textMuted, fontSize: 13, fontWeight: FontWeight.w500)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: _accentBlueBg, borderRadius: BorderRadius.circular(6)),
+                child: Text('${_exercises.isNotEmpty && _exercises.first.name.isNotEmpty ? _exercises.first.name : 'Workout'} Day', 
+                            style: const TextStyle(color: _accentBlue, fontSize: 12, fontWeight: FontWeight.w600)),
+              )
+            ],
+          )
+        ],
+      ),
+    );
+  }
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        if (!_isEditing) ...[
-          GestureDetector(
-            onTap: _toggleTimer,
-            child: Text(
-              _timerDisplay,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: _timerRunning ? AppTheme.accentGreen : AppTheme.text500,
-                fontFamily: 'monospace',
+  Widget _buildOutlinedDropdown(IconData icon, String text, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        decoration: BoxDecoration(
+          color: _inputBg,
+          border: Border.all(color: _borderColor),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 14, color: _textSecondary),
+            const SizedBox(width: 6),
+            Expanded(child: Text(text, style: const TextStyle(color: _textPrimary, fontSize: 13), overflow: TextOverflow.ellipsis)),
+            const Icon(Icons.keyboard_arrow_down, size: 16, color: _textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        color: _cardBg,
+        border: Border(top: BorderSide(color: _borderColor)),
+      ),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: _toggleTimer,
+                child: Row(
+                  children: [
+                    const Icon(Icons.timer_outlined, color: _textSecondary, size: 24),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_timerRunning ? 'Workout Duration' : 'Paused', style: const TextStyle(fontSize: 10, color: _textMuted)),
+                        Text(_timerDisplay, style: const TextStyle(fontSize: 16, color: _textPrimary, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          const Text('•', style: TextStyle(color: AppTheme.text600)),
-          const SizedBox(width: 8),
-        ],
-        Expanded(
-          child: GestureDetector(
-            onTap: _showMetaEditDialog,
-            child: Text(
-              metaText,
-              style: const TextStyle(fontSize: 14, color: AppTheme.text400, fontWeight: FontWeight.w500),
+            Expanded(
+              child: Row(
+                children: [
+                  const Icon(Icons.fitness_center, color: _textSecondary, size: 24),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Exercises', style: TextStyle(fontSize: 10, color: _textMuted)),
+                      Text('${_exercises.length}', style: const TextStyle(fontSize: 16, color: _textPrimary, fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
+            ElevatedButton(
+              onPressed: _loading ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _accentBlue,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              ),
+              child: _loading 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text('Finish Session', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
   void _showMetaEditDialog() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.bg900,
+      backgroundColor: _cardBg,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => Padding(
@@ -557,48 +675,52 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Edit Session Details', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.text100)),
+            const Text('Edit Session Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _textPrimary)),
             const SizedBox(height: 20),
             Row(children: [
               Expanded(child: _numField(_blockCtrl, 'Block')),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(child: _numField(_weekCtrl, 'Week')),
             ]),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: _day,
               decoration: _deco('Day'),
-              dropdownColor: AppTheme.bg850,
-              style: const TextStyle(fontSize: 15, color: AppTheme.text100, fontWeight: FontWeight.w600),
+              dropdownColor: _cardBg,
+              style: const TextStyle(fontSize: 14, color: _textPrimary, fontWeight: FontWeight.w500),
               items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
               onChanged: (v) {
                 if (v != null) {
-                  _onDayChanged(v);
-                  setState(() {});
+                  setState(() => _day = v);
+                  _tryLoadPreviousSessionForDay(v);
                 }
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             GestureDetector(
               onTap: () async {
                 final picked = await showDatePicker(
                     context: context,
                     initialDate: DateTime.tryParse(_date) ?? DateTime.now(),
-                    firstDate: DateTime(2020), lastDate: DateTime(2030));
+                    firstDate: DateTime(2020), lastDate: DateTime(2030),
+                    builder: (context, child) => Theme(
+                      data: ThemeData.dark().copyWith(
+                        colorScheme: const ColorScheme.dark(primary: _accentBlue, surface: _bg)
+                      ),
+                      child: child!,
+                    ));
                 if (picked != null) {
-                  setState(() {
-                    _date = DateFormat('yyyy-MM-dd').format(picked);
-                  });
+                  setState(() => _date = DateFormat('yyyy-MM-dd').format(picked));
                 }
               },
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-                decoration: BoxDecoration(color: AppTheme.bg850, borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                decoration: BoxDecoration(color: _inputBg, borderRadius: BorderRadius.circular(8)),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('Date', style: TextStyle(fontSize: 11, color: AppTheme.text500)),
-                  const SizedBox(height: 2),
-                  Text(_date, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text100)),
+                  const Text('Date', style: TextStyle(fontSize: 12, color: _textMuted)),
+                  const SizedBox(height: 4),
+                  Text(_date, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _textPrimary)),
                 ]),
               ),
             ),
@@ -606,12 +728,12 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accentRed, padding: const EdgeInsets.symmetric(vertical: 14)),
+                style: ElevatedButton.styleFrom(backgroundColor: _accentBlue, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                 onPressed: () {
                   setState(() {});
                   Navigator.pop(ctx);
                 },
-                child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w700)),
+                child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w600)),
               ),
             ),
           ],
@@ -625,29 +747,38 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       controller: ctrl,
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.text50),
+      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _textPrimary),
       decoration: _deco(label),
     );
   }
 
   InputDecoration _deco(String label) => InputDecoration(
     labelText: label,
-    labelStyle: const TextStyle(fontSize: 12, color: AppTheme.text500),
-    filled: true, fillColor: AppTheme.bg850,
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    labelStyle: const TextStyle(fontSize: 12, color: _textMuted),
+    filled: true, fillColor: _inputBg,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _borderColor)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _borderColor)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _accentBlue)),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
   );
 
-  Widget _addBtn(String label, String category, Color color) {
+  Widget _addCardBtn(String label, String category, IconData icon) {
     return GestureDetector(
       onTap: () => setState(() => _exercises.add(_ExData.empty(category))),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
+          color: _inputBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _borderColor),
         ),
-        child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+        child: Column(
+          children: [
+            Icon(icon, color: _accentBlue, size: 24),
+            const SizedBox(height: 8),
+            Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _textPrimary)),
+          ],
+        ),
       ),
     );
   }
@@ -656,30 +787,25 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _autoSaveTimer?.cancel();
-    // Final safety-net save on dispose
     if (!_isEditing) _saveDraftSilent();
     _blockCtrl.dispose();
     _weekCtrl.dispose();
     _notesCtrl.dispose();
     _timerTick?.cancel();
-    for (final ex in _exercises) {
-      ex.dispose();
-    }
+    for (final ex in _exercises) ex.dispose();
     super.dispose();
   }
 }
 
-// ────────────────────────────────────────
-// Exercise data model with unique ID
-// ────────────────────────────────────────
 class _ExData {
   final String id;
   String name;
   String category;
+  List<Map<String, dynamic>>? pastSets;
   final TextEditingController pctCtrl;
   final List<_SetData> sets;
 
-  _ExData({required this.id, required this.name, required this.category, required this.pctCtrl, required this.sets});
+  _ExData({required this.id, required this.name, required this.category, required this.pctCtrl, required this.sets, this.pastSets});
 
   factory _ExData.empty(String category) => _ExData(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -689,11 +815,17 @@ class _ExData {
   );
 
   factory _ExData.fromMap(Map<String, dynamic> m) {
-    final sets = (m['sets'] as List? ?? []).map((s) => _SetData(
-      wCtrl: TextEditingController(text: (s['weight'] ?? '').toString()),
-      sCtrl: TextEditingController(text: (s['sets'] ?? '1').toString()),
-      rCtrl: TextEditingController(text: (s['reps'] ?? '').toString()),
-    )).toList();
+    final sets = <_SetData>[];
+    for (var s in (m['sets'] as List? ?? [])) {
+      int count = int.tryParse(s['sets']?.toString() ?? '1') ?? 1;
+      for (int i = 0; i < count; i++) {
+        sets.add(_SetData(
+          wCtrl: TextEditingController(text: (s['weight'] ?? '').toString()),
+          sCtrl: TextEditingController(text: '1'),
+          rCtrl: TextEditingController(text: (s['reps'] ?? '').toString()),
+        ));
+      }
+    }
     if (sets.isEmpty) sets.add(_SetData.empty());
     return _ExData(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -725,24 +857,114 @@ class _SetData {
   final TextEditingController wCtrl;
   final TextEditingController sCtrl;
   final TextEditingController rCtrl;
+  bool isCompleted;
 
-  _SetData({required this.wCtrl, required this.sCtrl, required this.rCtrl});
+  _SetData({required this.wCtrl, required this.sCtrl, required this.rCtrl, this.isCompleted = false});
 
   factory _SetData.empty() => _SetData(
     wCtrl: TextEditingController(),
-    sCtrl: TextEditingController(text: '3'),
-    rCtrl: TextEditingController(text: '5'),
+    sCtrl: TextEditingController(text: '1'),
+    rCtrl: TextEditingController(),
   );
 
   void dispose() { wCtrl.dispose(); sCtrl.dispose(); rCtrl.dispose(); }
 }
 
-// ────────────────────────────────────────
-// SEPARATE StatefulWidget for each exercise card
-// This is the KEY fix: setState within this widget
-// does NOT rebuild sibling exercise cards or their TextFields
-// ────────────────────────────────────────
+class _HistorySummary extends StatefulWidget {
+  final List<Map<String, dynamic>> pastSets;
+  const _HistorySummary({required this.pastSets});
+
+  @override
+  State<_HistorySummary> createState() => _HistorySummaryState();
+}
+
+class _HistorySummaryState extends State<_HistorySummary> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.pastSets.isEmpty) return const SizedBox();
+
+    double maxW = 0;
+    int maxR = 0;
+    int totalSets = 0;
+
+    for (final s in widget.pastSets) {
+      final w = double.tryParse(s['weight']?.toString() ?? '0') ?? 0;
+      final r = int.tryParse(s['reps']?.toString() ?? '0') ?? 0;
+      final c = int.tryParse(s['sets']?.toString() ?? '1') ?? 1;
+      totalSets += c;
+      if (w > maxW) {
+        maxW = w;
+        maxR = r;
+      }
+    }
+
+    final wStr = maxW.toString().replaceAll('.0', '');
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('LAST SESSION', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _textMuted, letterSpacing: 0.5)),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text('$wStr × $maxR', style: const TextStyle(fontSize: 16, color: _textPrimary, fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 6),
+                      Text('($totalSets sets)', style: const TextStyle(fontSize: 13, color: _textSecondary)),
+                    ],
+                  ),
+                ],
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(border: Border.all(color: _borderColor), borderRadius: BorderRadius.circular(6)),
+                  child: Row(
+                    children: [
+                      const Text('View all', style: TextStyle(fontSize: 12, color: _textSecondary)),
+                      const SizedBox(width: 4),
+                      Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 14, color: _textSecondary),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_expanded) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: widget.pastSets.map((s) {
+                final w = s['weight']?.toString().replaceAll('.0', '') ?? '0';
+                final r = s['reps']?.toString() ?? '0';
+                final c = int.tryParse(s['sets']?.toString() ?? '1') ?? 1;
+                if (c > 1) return Text('$c × ${w}kg × $r', style: const TextStyle(fontSize: 13, color: _textSecondary, fontFamily: 'monospace'));
+                return Text('${w}kg × $r', style: const TextStyle(fontSize: 13, color: _textSecondary, fontFamily: 'monospace'));
+              }).toList(),
+            ),
+          ),
+        ],
+        const Divider(height: 1, color: _borderColor),
+      ],
+    );
+  }
+}
+
 class _ExerciseCard extends StatefulWidget {
+  final int index;
   final _ExData data;
   final List<String> mainLifts;
   final Map<String, List<String>> secondaryLifts;
@@ -752,9 +974,11 @@ class _ExerciseCard extends StatefulWidget {
   final List<String> dynamicAccessories;
   final bool canDelete;
   final VoidCallback onDelete;
+  final Function(String) onExerciseChanged;
 
   const _ExerciseCard({
     super.key,
+    required this.index,
     required this.data,
     required this.mainLifts,
     required this.secondaryLifts,
@@ -764,6 +988,7 @@ class _ExerciseCard extends StatefulWidget {
     required this.dynamicAccessories,
     required this.canDelete,
     required this.onDelete,
+    required this.onExerciseChanged,
   });
 
   @override
@@ -773,240 +998,272 @@ class _ExerciseCard extends StatefulWidget {
 class _ExerciseCardState extends State<_ExerciseCard> {
   _ExData get d => widget.data;
 
-  Color get _color {
-    switch (d.category) {
-      case 'main': return AppTheme.accentRed;
-      case 'secondary': return AppTheme.accentBlue;
-      default: return AppTheme.accentGreen;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 32),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      decoration: BoxDecoration(
+        color: _cardBg,
+        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Header row
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: _buildNamePicker(),
-            ),
-            if (d.category == 'main' || d.category == 'secondary') ...[
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              ReorderableDragStartListener(
+                index: widget.index,
+                child: Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _accentBlue)),
+                  child: Center(child: Text('${widget.index + 1}', style: const TextStyle(color: _accentBlue, fontWeight: FontWeight.w600, fontSize: 13))),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: _buildNamePicker(context)),
               const SizedBox(width: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppTheme.bg900,
-                  borderRadius: BorderRadius.circular(6),
-                ),
+                width: 56,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(color: _accentBlueBg, borderRadius: BorderRadius.circular(6)),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                      width: 28,
+                    Expanded(
                       child: TextField(
                         controller: d.pctCtrl,
                         keyboardType: TextInputType.number,
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(fontSize: 14, color: AppTheme.text300, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 14, color: _accentBlue, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
                         decoration: const InputDecoration(
-                          hintText: '--',
-                          hintStyle: TextStyle(fontSize: 14, color: AppTheme.text700),
+                          hintText: '-',
+                          hintStyle: TextStyle(fontSize: 14, color: _accentBlue),
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 2),
-                    const Text('%', style: TextStyle(fontSize: 14, color: AppTheme.text500, fontWeight: FontWeight.w600)),
+                    const Text('%', style: TextStyle(fontSize: 12, color: _accentBlue, fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),
+              if (widget.canDelete) ...[
+                const SizedBox(width: 8),
+                PopupMenuButton<String>(
+                  color: _cardBg,
+                  icon: const Icon(Icons.more_vert, size: 20, color: _textSecondary),
+                  onSelected: (value) {
+                    if (value == 'delete') widget.onDelete();
+                  },
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(
+                      value: 'delete',
+                      child: Text('Delete Exercise', style: TextStyle(color: Color(0xFFD95A5A))),
+                    ),
+                  ],
+                ),
+              ]
             ],
-            if (widget.canDelete) ...[
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.close, size: 20, color: AppTheme.text600),
-                onPressed: widget.onDelete,
-                padding: EdgeInsets.zero, constraints: const BoxConstraints(),
-              ),
-            ]
-        ]),
-        const SizedBox(height: 16),
+          ),
+        ),
+        
+        const Divider(height: 1, color: _borderColor),
 
-        // Column headers
+        if (d.pastSets != null && d.pastSets!.isNotEmpty)
+           _HistorySummary(pastSets: d.pastSets!),
+
         const Padding(
-          padding: EdgeInsets.only(left: 30),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text('LOG SETS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _textMuted, letterSpacing: 0.5)),
+        ),
+
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
-            Expanded(flex: 3, child: Text('Wt (kg)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text500))),
-            SizedBox(width: 6),
-            Expanded(flex: 2, child: Text('Sets', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text500))),
-            SizedBox(width: 6),
-            Expanded(flex: 2, child: Text('Reps', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text500))),
-            SizedBox(width: 32),
+            Expanded(flex: 1, child: Center(child: Text('SETS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _textMuted, letterSpacing: 0.5)))),
+            SizedBox(width: 8),
+            Expanded(flex: 2, child: Center(child: Text('WEIGHT (KG)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _textMuted, letterSpacing: 0.5)))),
+            SizedBox(width: 8),
+            Expanded(flex: 2, child: Center(child: Text('REPS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _textMuted, letterSpacing: 0.5)))),
+            SizedBox(width: 8),
+            SizedBox(width: 44, child: Center(child: Icon(Icons.check, size: 14, color: _textMuted))),
+            SizedBox(width: 40),
           ]),
         ),
         const SizedBox(height: 8),
 
-        // Set rows
-        ...d.sets.asMap().entries.map((e) => _buildSetRow(e.key, e.value)),
+        ...d.sets.asMap().entries.map((e) => _buildSetRow(e.key, e.value, d)),
 
-        // Add set
-        GestureDetector(
-          onTap: () {
-            final lastW = d.sets.isNotEmpty ? d.sets.last.wCtrl.text : '';
-            setState(() => d.sets.add(_SetData(
-              wCtrl: TextEditingController(text: lastW),
-              sCtrl: TextEditingController(text: '1'),
-              rCtrl: TextEditingController(),
-            )));
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(children: [
-              Icon(Icons.add, size: 16, color: _color),
-              const SizedBox(width: 8),
-              Text('Add Set', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _color)),
-            ]),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: GestureDetector(
+            onTap: () {
+              final lastW = d.sets.isNotEmpty ? d.sets.last.wCtrl.text : '';
+              final lastR = d.sets.isNotEmpty ? d.sets.last.rCtrl.text : '';
+              setState(() => d.sets.add(_SetData(
+                wCtrl: TextEditingController(text: lastW),
+                sCtrl: TextEditingController(text: '1'),
+                rCtrl: TextEditingController(text: lastR),
+              )));
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: _inputBg,
+                border: Border.all(color: _accentBlueBg),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add, size: 16, color: _accentBlue),
+                  SizedBox(width: 4),
+                  Text('Add Set', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _accentBlue)),
+                ],
+              ),
+            ),
           ),
         ),
       ]),
     );
   }
 
-  Widget _buildNamePicker() {
+  Widget _buildNamePicker(BuildContext context) {
+    List<String> options = [];
     if (d.category == 'main') {
-      return DropdownButtonFormField<String>(
-        value: widget.mainLifts.contains(d.name) ? d.name : null,
-        hint: const Text('Select lift', style: TextStyle(color: AppTheme.text500, fontSize: 14)),
-        isExpanded: true,
-        decoration: const InputDecoration.collapsed(hintText: ''),
-        dropdownColor: AppTheme.bg850,
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _color),
-        items: widget.mainLifts.map((l) => DropdownMenuItem(value: l,
-            child: Text(l, style: TextStyle(color: _color, fontWeight: FontWeight.w800)))).toList(),
-        onChanged: (v) => setState(() => d.name = v ?? ''),
-      );
+      options = widget.mainLifts;
+    } else if (d.category == 'secondary') {
+      options = widget.allSecondaryLifts;
+    } else {
+      options = [...widget.allAccessoryLifts, ...widget.dynamicAccessories].toSet().toList();
     }
-    if (d.category == 'secondary') {
-      return DropdownButtonFormField<String>(
-        value: widget.allSecondaryLifts.contains(d.name) ? d.name : null,
-        hint: const Text('Select variation', style: TextStyle(color: AppTheme.text500, fontSize: 14)),
-        isExpanded: true,
-        decoration: const InputDecoration.collapsed(hintText: ''),
-        dropdownColor: AppTheme.bg850,
-        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _color),
-        items: widget.secondaryLifts.entries.expand((e) => [
-          DropdownMenuItem(enabled: false, value: '__${e.key}',
-              child: Text('── ${e.key} ──', style: TextStyle(fontSize: 11, color: _color.withValues(alpha: 0.5), fontWeight: FontWeight.w800))),
-          ...e.value.map((v) => DropdownMenuItem(value: v, child: Text(v))),
-        ]).toList(),
-        onChanged: (v) { if (v != null && !v.startsWith('__')) setState(() => d.name = v); },
-      );
-    }
-    // Accessory: grouped dropdown with custom option
-    final isKnown = widget.allAccessoryLifts.contains(d.name) || widget.dynamicAccessories.contains(d.name);
-    final isCustom = d.name.isNotEmpty && !isKnown && d.name != '__custom__';
-    return isCustom
-        ? Row(children: [
-            Expanded(
-              child: TextField(
-                decoration: InputDecoration.collapsed(hintText: 'Exercise name', hintStyle: TextStyle(color: AppTheme.text500)),
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _color),
-                controller: TextEditingController(text: d.name)..selection = TextSelection.collapsed(offset: d.name.length),
-                onChanged: (v) => d.name = v,
-              ),
+    
+    return Autocomplete<String>(
+      initialValue: TextEditingValue(text: d.name),
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        if (textEditingValue.text.isEmpty) return options;
+        return options.where((String option) => option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+      },
+      onSelected: (String selection) {
+        setState(() => d.name = selection);
+        widget.onExerciseChanged(selection);
+      },
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+         return TextField(
+            controller: controller,
+            focusNode: focusNode,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textPrimary),
+            decoration: const InputDecoration(
+               hintText: 'Exercise name...',
+               hintStyle: TextStyle(color: _textMuted, fontSize: 16, fontWeight: FontWeight.normal),
+               border: InputBorder.none,
+               isDense: true,
+               contentPadding: EdgeInsets.zero,
             ),
-            IconButton(
-              icon: const Icon(Icons.list, size: 18, color: AppTheme.text500),
-              onPressed: () => setState(() => d.name = ''),
-              padding: EdgeInsets.zero, constraints: const BoxConstraints(),
-              tooltip: 'Switch to dropdown',
-            ),
-          ])
-        : DropdownButtonFormField<String>(
-            value: isKnown ? d.name : null,
-            hint: const Text('Select exercise', style: TextStyle(color: AppTheme.text500, fontSize: 14)),
-            isExpanded: true,
-            decoration: const InputDecoration.collapsed(hintText: ''),
-            dropdownColor: AppTheme.bg850,
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _color),
-            items: [
-              ...widget.accessoryLifts.entries.expand((e) => [
-                DropdownMenuItem(enabled: false, value: '__hdr_${e.key}',
-                    child: Text('── ${e.key} ──', style: TextStyle(fontSize: 11, color: _color.withValues(alpha: 0.5), fontWeight: FontWeight.w800))),
-                ...e.value.map((v) => DropdownMenuItem(value: v, child: Text(v))),
-              ]),
-              if (widget.dynamicAccessories.isNotEmpty) ...[
-                const DropdownMenuItem(enabled: false, value: '__hdr_History',
-                    child: Text('── Recent ──', style: TextStyle(fontSize: 11, color: AppTheme.accentGreen, fontWeight: FontWeight.w800))),
-                ...widget.dynamicAccessories.map((v) => DropdownMenuItem(value: v, child: Text(v))),
-              ],
-              const DropdownMenuItem(value: '__custom__',
-                  child: Text('✏️  Type custom...', style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic))),
-            ],
             onChanged: (v) {
-              if (v == '__custom__') {
-                setState(() => d.name = ' ');  // trigger text field mode
-              } else if (v != null && !v.startsWith('__')) {
-                setState(() => d.name = v);
-              }
+               d.name = v;
+               widget.onExerciseChanged(v);
             },
-          );
+         );
+      },
+      optionsViewBuilder: (context, onSelected, optionsView) {
+         return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+               elevation: 4,
+               color: _inputBg,
+               borderRadius: BorderRadius.circular(8),
+               child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: 250, maxWidth: MediaQuery.of(context).size.width - 96),
+                  child: ListView.builder(
+                     padding: EdgeInsets.zero,
+                     shrinkWrap: true,
+                     itemCount: optionsView.length,
+                     itemBuilder: (BuildContext context, int index) {
+                        final String option = optionsView.elementAt(index);
+                        return InkWell(
+                           onTap: () => onSelected(option),
+                           child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              child: Text(option, style: const TextStyle(color: _textPrimary, fontSize: 15, fontWeight: FontWeight.w500)),
+                           ),
+                        );
+                     },
+                  ),
+               ),
+            ),
+         );
+      },
+    );
   }
 
-  Widget _buildSetRow(int idx, _SetData s) {
+  Widget _buildSetRow(int idx, _SetData s, _ExData d) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 8, left: 16, right: 0),
       child: Row(children: [
-        // Set number
-        SizedBox(
-          width: 24,
-          child: Center(child: Text('${idx + 1}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.text500))),
+        Expanded(flex: 1, child: _inputField(s.sCtrl, '1', isCompleted: s.isCompleted)),
+        const SizedBox(width: 8),
+        Expanded(flex: 2, child: _inputField(s.wCtrl, 'e.g. 100', decimal: true, isCompleted: s.isCompleted)),
+        const SizedBox(width: 8),
+        Expanded(flex: 2, child: _inputField(s.rCtrl, 'e.g. 5', isCompleted: s.isCompleted)),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () {
+             if (s.wCtrl.text.isNotEmpty && s.rCtrl.text.isNotEmpty) {
+                setState(() => s.isCompleted = !s.isCompleted);
+             }
+          },
+          child: Container(
+            width: 44, height: 42,
+            decoration: BoxDecoration(
+              color: s.isCompleted ? _accentBlue : _inputBg,
+              border: Border.all(color: s.isCompleted ? _accentBlue : _borderColor),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: s.isCompleted ? const Icon(Icons.check, size: 20, color: Colors.white) : null,
+          ),
         ),
-        const SizedBox(width: 6),
-        Expanded(flex: 3, child: _inputField(s.wCtrl, '0', decimal: true)),
-        const SizedBox(width: 6),
-        Expanded(flex: 2, child: _inputField(s.sCtrl, '3')),
-        const SizedBox(width: 6),
-        Expanded(flex: 2, child: _inputField(s.rCtrl, '5')),
         SizedBox(
-          width: 32,
-          child: d.sets.length > 1
-              ? IconButton(
-                  icon: const Icon(Icons.remove, size: 18, color: AppTheme.text600),
-                  onPressed: () => setState(() { s.dispose(); d.sets.removeAt(idx); }),
-                  padding: EdgeInsets.zero, constraints: const BoxConstraints(),
-                )
-              : const SizedBox(),
+          width: 40,
+          child: d.sets.length > 1 ? IconButton(
+            icon: const Icon(Icons.close, size: 18, color: _textMuted),
+            onPressed: () {
+              setState(() {
+                s.dispose();
+                d.sets.removeAt(idx);
+              });
+            },
+          ) : const SizedBox(),
         ),
       ]),
     );
   }
 
-  Widget _inputField(TextEditingController ctrl, String hint, {bool decimal = false}) {
+  Widget _inputField(TextEditingController ctrl, String hint, {bool decimal = false, bool isCompleted = false}) {
     return Container(
+      height: 42,
       decoration: BoxDecoration(
-        color: AppTheme.bg900,
+        color: _inputBg,
+        border: Border.all(color: _borderColor),
         borderRadius: BorderRadius.circular(6),
       ),
       child: TextField(
         controller: ctrl,
+        enabled: !isCompleted,
         keyboardType: decimal ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.number,
         inputFormatters: decimal
             ? [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))]
             : [FilteringTextInputFormatter.digitsOnly],
         textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.text100, fontFamily: 'monospace'),
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: isCompleted ? _textSecondary : _textPrimary, fontFamily: 'monospace'),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(fontSize: 16, color: AppTheme.text700),
+          hintStyle: const TextStyle(fontSize: 14, color: _textMuted),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
           isDense: true,
         ),
       ),
