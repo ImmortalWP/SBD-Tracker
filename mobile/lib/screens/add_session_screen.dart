@@ -377,10 +377,12 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       }
       if (sets.isEmpty) continue;
       final pct = ex.pctCtrl.text.trim();
+      final note = ex.noteCtrl.text.trim();
       exercises.add({
         'name': ex.name.trim(),
         'category': ex.category,
         if (pct.isNotEmpty) 'percentage': int.tryParse(pct),
+        if (note.isNotEmpty) 'note': note,
         'sets': sets,
       });
     }
@@ -803,14 +805,16 @@ class _ExData {
   String category;
   List<Map<String, dynamic>>? pastSets;
   final TextEditingController pctCtrl;
+  final TextEditingController noteCtrl;
   final List<_SetData> sets;
 
-  _ExData({required this.id, required this.name, required this.category, required this.pctCtrl, required this.sets, this.pastSets});
+  _ExData({required this.id, required this.name, required this.category, required this.pctCtrl, required this.noteCtrl, required this.sets, this.pastSets});
 
   factory _ExData.empty(String category) => _ExData(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
     name: '', category: category,
     pctCtrl: TextEditingController(),
+    noteCtrl: TextEditingController(),
     sets: [_SetData.empty()],
   );
 
@@ -832,6 +836,7 @@ class _ExData {
       name: m['name'] ?? '',
       category: m['category'] ?? 'main',
       pctCtrl: TextEditingController(text: (m['percentage'] ?? '').toString()),
+      noteCtrl: TextEditingController(text: (m['note'] ?? '').toString()),
       sets: sets,
     );
   }
@@ -840,6 +845,7 @@ class _ExData {
     'name': name,
     'category': category,
     'percentage': pctCtrl.text,
+    'note': noteCtrl.text,
     'sets': sets.map((s) => {
       'weight': s.wCtrl.text,
       'sets': s.sCtrl.text,
@@ -849,6 +855,7 @@ class _ExData {
 
   void dispose() {
     pctCtrl.dispose();
+    noteCtrl.dispose();
     for (final s in sets) s.dispose();
   }
 }
@@ -1127,6 +1134,27 @@ class _ExerciseCardState extends State<_ExerciseCard> {
             ),
           ),
         ),
+
+        if (d.category == 'main' || d.category == 'secondary')
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: TextField(
+              controller: d.noteCtrl,
+              maxLines: null,
+              style: const TextStyle(fontSize: 13, color: _textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Add a note for this lift...',
+                hintStyle: const TextStyle(fontSize: 13, color: _textMuted),
+                filled: true,
+                fillColor: _inputBg,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _borderColor)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _borderColor)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _accentBlue)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                isDense: true,
+              ),
+            ),
+          ),
       ]),
     );
   }

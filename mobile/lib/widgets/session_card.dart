@@ -134,6 +134,18 @@ class SessionCard extends StatelessWidget {
               ),
             ),
           ],
+          if (ex['note'] != null && (ex['note'] as String).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.notes, size: 12, color: AppTheme.text600),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(ex['note'], style: const TextStyle(fontSize: 12, color: AppTheme.text400, fontStyle: FontStyle.italic))),
+                ],
+              ),
+            ),
         ],
       ),
     );

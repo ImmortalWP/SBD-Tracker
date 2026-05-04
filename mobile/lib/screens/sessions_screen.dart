@@ -209,6 +209,26 @@ class _SessionsScreenState extends State<SessionsScreen> {
     );
   }
 
+  List<int> get _availableBlocks {
+    final blocks = <int>{};
+    for (final s in widget.sessions) {
+      final b = s['block'];
+      if (b != null) blocks.add(b is int ? b : int.tryParse(b.toString()) ?? 1);
+    }
+    final sorted = blocks.toList()..sort();
+    return sorted.isEmpty ? [1] : sorted;
+  }
+
+  List<int> get _availableWeeks {
+    final weeks = <int>{};
+    for (final s in widget.sessions) {
+      final w = s['week'];
+      if (w != null) weeks.add(w is int ? w : int.tryParse(w.toString()) ?? 1);
+    }
+    final sorted = weeks.toList()..sort();
+    return sorted.isEmpty ? [1] : sorted;
+  }
+
   Widget _buildFiltersRow() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -216,23 +236,33 @@ class _SessionsScreenState extends State<SessionsScreen> {
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            GestureDetector(
-              onTap: () {
-                setState(() => _selectedBlock = _selectedBlock == 1 ? null : 1);
-              },
+            // Block dropdown
+            PopupMenuButton<int?>(
+              onSelected: (val) => setState(() => _selectedBlock = val),
+              color: _cardBg,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              itemBuilder: (_) => [
+                PopupMenuItem<int?>(value: null, child: Text('All Blocks', style: TextStyle(color: _selectedBlock == null ? _accentBlueLight : _textPrimary))),
+                ..._availableBlocks.map((b) => PopupMenuItem<int?>(value: b, child: Text('Block $b', style: TextStyle(color: _selectedBlock == b ? _accentBlueLight : _textPrimary)))),
+              ],
               child: _buildFilterBtn(Icons.grid_view, _selectedBlock != null ? 'Block $_selectedBlock' : 'All Blocks', true, _selectedBlock != null),
             ),
             const SizedBox(width: 12),
-            GestureDetector(
-              onTap: () {
-                setState(() => _selectedWeek = _selectedWeek == 1 ? null : 1);
-              },
+            // Week dropdown
+            PopupMenuButton<int?>(
+              onSelected: (val) => setState(() => _selectedWeek = val),
+              color: _cardBg,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              itemBuilder: (_) => [
+                PopupMenuItem<int?>(value: null, child: Text('All Weeks', style: TextStyle(color: _selectedWeek == null ? _accentBlueLight : _textPrimary))),
+                ..._availableWeeks.map((w) => PopupMenuItem<int?>(value: w, child: Text('Week $w', style: TextStyle(color: _selectedWeek == w ? _accentBlueLight : _textPrimary)))),
+              ],
               child: _buildFilterBtn(Icons.calendar_month, _selectedWeek != null ? 'Week $_selectedWeek' : 'All Weeks', true, _selectedWeek != null),
             ),
             const SizedBox(width: 12),
             GestureDetector(
               onTap: _showFilterSheet,
-              child: _buildFilterBtn(Icons.filter_alt_outlined, _selectedDay ?? 'Filters', false, _selectedDay != null),
+              child: _buildFilterBtn(Icons.filter_alt_outlined, _selectedDay ?? 'Day', false, _selectedDay != null),
             ),
           ],
         ),
@@ -291,10 +321,19 @@ class _SessionsScreenState extends State<SessionsScreen> {
   }
 
   String _getSessionDuration(Map<String, dynamic> session) {
-    final s = session['elapsedSeconds'];
-    if (s == null) return '60 min'; // fallback mock if no timer data
-    final m = (s ~/ 60);
-    return '$m min';
+    // Try the new field first
+    final dMin = session['durationInMinutes'];
+    if (dMin != null) {
+      final m = int.tryParse(dMin.toString()) ?? 0;
+      if (m > 0) return '$m min';
+    }
+    // Fallback to legacy 'duration' field
+    final dur = session['duration'];
+    if (dur != null) {
+      final m = int.tryParse(dur.toString()) ?? 0;
+      if (m > 0) return '$m min';
+    }
+    return '— min';
   }
 
   // --- Main Card Builder ---
@@ -365,22 +404,31 @@ class _SessionsScreenState extends State<SessionsScreen> {
               _buildExpandedSummaryRow(exercises.length, vol, sets, dur),
               const SizedBox(height: 24),
               ...exercises.map((ex) => _ExerciseHistoryTile(ex: ex)).toList(),
-              if (session['note'] != null && session['note'].toString().trim().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: _inputBg, borderRadius: BorderRadius.circular(8)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Notes', style: TextStyle(fontSize: 12, color: _textMuted, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 4),
-                      Text(session['note'].toString(), style: const TextStyle(fontSize: 14, color: _textSecondary)),
-                    ],
+              // Check both 'note' and 'notes' for backward compatibility
+              Builder(builder: (_) {
+                final noteText = (session['note']?.toString().trim().isNotEmpty == true)
+                    ? session['note'].toString()
+                    : (session['notes']?.toString().trim().isNotEmpty == true)
+                        ? session['notes'].toString()
+                        : null;
+                if (noteText == null || noteText.trim().isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: _inputBg, borderRadius: BorderRadius.circular(8)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Notes', style: TextStyle(fontSize: 12, color: _textMuted, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(noteText, style: const TextStyle(fontSize: 14, color: _textSecondary)),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                );
+              }),
             ]
           ],
         ),

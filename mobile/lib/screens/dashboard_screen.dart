@@ -9,6 +9,8 @@ import '../services/auth_service.dart';
 import '../services/draft_service.dart';
 import '../screens/add_session_screen.dart';
 import '../screens/sessions_screen.dart';
+import '../screens/analytics_screen.dart';
+import '../screens/profile_screen.dart';
 
 // Dark Blue Theme Constants
 const Color _bg = Color(0xFF090D14);
@@ -201,8 +203,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 SessionsScreen(sessions: _sessions, onRefresh: _loadData, prs: _prs),
-                const SizedBox(), // Analytics placeholder
-                const SizedBox(), // Profile placeholder
+                const AnalyticsScreen(),
+                const ProfileScreen(),
               ],
             ),
             _buildBottomNav(),
@@ -325,21 +327,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
           if (_hasDraft)
             Text(_timerDisplay, style: const TextStyle(fontSize: 16, color: _textSecondary, fontFamily: 'monospace'))
           else
-            Row(
-              children: [
-                const Icon(Icons.event_note, color: _textMuted, size: 14),
-                const SizedBox(width: 6),
-                const Text('Sunday', style: TextStyle(fontSize: 13, color: _textSecondary)),
-                const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('•', style: TextStyle(color: _textMuted))),
-                const Icon(Icons.inventory_2_outlined, color: _textMuted, size: 14),
-                const SizedBox(width: 6),
-                const Text('Block 1', style: TextStyle(fontSize: 13, color: _textSecondary)),
-                const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('•', style: TextStyle(color: _textMuted))),
-                const Icon(Icons.show_chart, color: _textMuted, size: 14),
-                const SizedBox(width: 6),
-                const Text('Week 3', style: TextStyle(fontSize: 13, color: _textSecondary)),
-              ],
-            ),
+            Builder(builder: (_) {
+              final todayDay = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][DateTime.now().weekday - 1];
+              int currentBlock = 1;
+              int currentWeek = 1;
+              if (_sessions.isNotEmpty) {
+                final latest = _sessions.first;
+                currentBlock = latest['block'] ?? 1;
+                currentWeek = latest['week'] ?? 1;
+                // If the latest session's day comes before today in the week, we're still on the same week.
+                // If the latest session IS the last day of the training week (e.g. Sunday) and today is a new week start, bump the week.
+                final latestDay = latest['day'] ?? '';
+                final dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                final latestDayIdx = dayOrder.indexOf(latestDay);
+                final todayIdx = dayOrder.indexOf(todayDay);
+                if (todayIdx < latestDayIdx) {
+                  // New week started
+                  currentWeek += 1;
+                }
+              }
+              return Row(
+                children: [
+                  const Icon(Icons.event_note, color: _textMuted, size: 14),
+                  const SizedBox(width: 6),
+                  Text(todayDay, style: const TextStyle(fontSize: 13, color: _textSecondary)),
+                  const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('•', style: TextStyle(color: _textMuted))),
+                  const Icon(Icons.inventory_2_outlined, color: _textMuted, size: 14),
+                  const SizedBox(width: 6),
+                  Text('Block $currentBlock', style: const TextStyle(fontSize: 13, color: _textSecondary)),
+                  const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('•', style: TextStyle(color: _textMuted))),
+                  const Icon(Icons.show_chart, color: _textMuted, size: 14),
+                  const SizedBox(width: 6),
+                  Text('Week $currentWeek', style: const TextStyle(fontSize: 13, color: _textSecondary)),
+                ],
+              );
+            }),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
