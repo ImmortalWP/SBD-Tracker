@@ -325,13 +325,27 @@ class _SessionsScreenState extends State<SessionsScreen> {
     final dMin = session['durationInMinutes'];
     if (dMin != null) {
       final m = int.tryParse(dMin.toString()) ?? 0;
-      if (m > 0) return '$m min';
+      if (m > 0) {
+        if (m >= 60) {
+          final h = m ~/ 60;
+          final rm = m % 60;
+          return rm > 0 ? '${h}h ${rm}m' : '${h}h';
+        }
+        return '$m min';
+      }
     }
     // Fallback to legacy 'duration' field
     final dur = session['duration'];
     if (dur != null) {
       final m = int.tryParse(dur.toString()) ?? 0;
-      if (m > 0) return '$m min';
+      if (m > 0) {
+        if (m >= 60) {
+          final h = m ~/ 60;
+          final rm = m % 60;
+          return rm > 0 ? '${h}h ${rm}m' : '${h}h';
+        }
+        return '$m min';
+      }
     }
     return '— min';
   }

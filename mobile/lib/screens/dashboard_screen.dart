@@ -769,9 +769,23 @@ class _RecentSessionTileState extends State<_RecentSessionTile> {
   }
 
   String _getSessionDuration(Map<String, dynamic> session) {
+    // Try durationInMinutes first (what the app saves on submit)
+    final dMin = session['durationInMinutes'];
+    if (dMin != null) {
+      final m = int.tryParse(dMin.toString()) ?? 0;
+      if (m > 0) {
+        if (m >= 60) {
+          final h = m ~/ 60;
+          final rm = m % 60;
+          return rm > 0 ? '${h}h ${rm}m' : '${h}h';
+        }
+        return '$m min';
+      }
+    }
+    // Fallback to elapsedSeconds
     final s = session['elapsedSeconds'];
-    if (s == null) return '60 min';
-    final int sec = s is int ? s : (int.tryParse(s.toString()) ?? 3600);
+    if (s == null) return '— min';
+    final int sec = s is int ? s : (int.tryParse(s.toString()) ?? 0);
     final h = sec ~/ 3600;
     final m = (sec % 3600) ~/ 60;
     if (h > 0) return '${h}h ${m}m';
