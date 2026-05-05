@@ -483,12 +483,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('WEEKLY PROGRESS', style: TextStyle(fontSize: 12, color: _textPrimary, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
-              Row(
-                children: [
-                  const Text('View details', style: TextStyle(fontSize: 13, color: _accentBlueLight, fontWeight: FontWeight.w500)),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right, size: 16, color: _accentBlueLight),
-                ],
+              GestureDetector(
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AnalyticsScreen())),
+                child: Row(
+                  children: [
+                    const Text('View details', style: TextStyle(fontSize: 13, color: _accentBlueLight, fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right, size: 16, color: _accentBlueLight),
+                  ],
+                ),
               ),
             ],
           ),
@@ -685,7 +688,10 @@ class _RecentSessionTileState extends State<_RecentSessionTile> {
   String _getSessionDuration(Map<String, dynamic> session) {
     final s = session['elapsedSeconds'];
     if (s == null) return '60 min';
-    final m = (s ~/ 60);
+    final int sec = s is int ? s : (int.tryParse(s.toString()) ?? 3600);
+    final h = sec ~/ 3600;
+    final m = (sec % 3600) ~/ 60;
+    if (h > 0) return '${h}h ${m}m';
     return '$m min';
   }
 

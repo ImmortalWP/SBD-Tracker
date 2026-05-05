@@ -31,13 +31,28 @@ class SessionCard extends StatelessWidget {
 
     final day = session['day'] ?? 'Day';
     final week = session['week'] != null ? 'Week ${session['week']}' : '';
-    final duration = session['duration'] != null && (session['duration'] as num) > 0 
-        ? '${session['duration']}min' : '';
+    int durationMinutes = 0;
+    if (session['elapsedSeconds'] != null) {
+      durationMinutes = (int.tryParse(session['elapsedSeconds'].toString()) ?? 0) ~/ 60;
+    } else if (session['duration'] != null) {
+      durationMinutes = (num.tryParse(session['duration'].toString()) ?? 0).toInt();
+    }
+    
+    String durationStr = '';
+    if (durationMinutes > 0) {
+      final h = durationMinutes ~/ 60;
+      final m = durationMinutes % 60;
+      if (h > 0) {
+        durationStr = '${h}h ${m}m';
+      } else {
+        durationStr = '${m}min';
+      }
+    }
     
     final metaParts = [
       if (formattedDate != null) formattedDate else day,
       if (week.isNotEmpty) week,
-      if (duration.isNotEmpty) duration,
+      if (durationStr.isNotEmpty) durationStr,
     ];
     final metaString = metaParts.join(' • ');
 

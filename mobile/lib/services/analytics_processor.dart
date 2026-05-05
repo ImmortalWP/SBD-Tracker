@@ -37,24 +37,47 @@ class LiftProgress {
   });
 }
 
+class LiftMetrics {
+  final double currentMax;
+  final double est1RM;
+  final double volume7d;
+  final int totalSets;
+  final double prevVolume7d;
+  final int prevTotalSets;
+  final double prevEst1RM;
+
+  LiftMetrics({
+    required this.currentMax,
+    required this.est1RM,
+    required this.volume7d,
+    required this.totalSets,
+    required this.prevVolume7d,
+    required this.prevTotalSets,
+    required this.prevEst1RM,
+  });
+}
+
 enum TrendDirection { up, down, flat, plateau }
 
 /// Smart insight generated from the data.
 class Insight {
   final String text;
   final InsightType type;
+  final String? subtext;
 
-  Insight({required this.text, required this.type});
+  Insight({required this.text, required this.type, this.subtext});
 }
 
 enum InsightType { positive, warning, neutral }
 
 /// Time range for filtering analytics data.
 enum TimeRange {
-  days7('7D', 7),
-  weeks4('4W', 28),
-  weeks12('12W', 84),
-  months6('6M', 180);
+  days7('Last 7 days', 7),
+  days30('Last 30 days', 30),
+  thisBlock('This Block', 28),
+  thisMonth('This Month', 30),
+  months6('Last 6M', 180),
+  thisYear('This Year', 365);
 
   final String label;
   final int days;
@@ -75,7 +98,17 @@ class AnalyticsProcessor {
 
   /// Filter sessions by time range.
   List<dynamic> _filterByRange(TimeRange range) {
-    final cutoff = DateTime.now().subtract(Duration(days: range.days));
+    // If range is This Month, just filter from 1st of month.
+    DateTime cutoff;
+    final now = DateTime.now();
+    if (range == TimeRange.thisMonth) {
+      cutoff = DateTime(now.year, now.month, 1);
+    } else if (range == TimeRange.thisYear) {
+      cutoff = DateTime(now.year, 1, 1);
+    } else {
+      cutoff = now.subtract(Duration(days: range.days));
+    }
+    
     return sessions.where((s) {
       final d = DateTime.tryParse(s['date']?.toString() ?? '');
       return d != null && d.isAfter(cutoff);
@@ -133,8 +166,8 @@ class AnalyticsProcessor {
     return points;
   }
 
-  /// Get weekly volume trend.
-  List<VolumePoint> getVolumeTrend(TimeRange range) {
+  /// Get weekly volume trend for a specific lift or all.
+  List<VolumePoint> getVolumeTrend(TimeRange range, {String? lift}) {
     final filtered = _filterByRange(range);
     if (filtered.isEmpty) return [];
 
@@ -154,9 +187,17 @@ class AnalyticsProcessor {
 
       for (final ex in (session['exercises'] as List? ?? [])) {
         final name = (ex['name']?.toString() ?? '').toLowerCase();
-        // Only count SBD + direct variations for volume
-        if (name.contains('squat') || name.contains('bench') || name.contains('larsen') ||
-            name.contains('dead') || name.contains('rdl')) {
+        bool include = false;
+        if (lift != null) {
+          include = _isLift(name, lift);
+        } else {
+          if (name.contains('squat') || name.contains('bench') || name.contains('larsen') ||
+              name.contains('dead') || name.contains('rdl')) {
+            include = true;
+          }
+        }
+
+        if (include) {
           for (final set in (ex['sets'] as List? ?? [])) {
             final w = (set['weight'] as num?)?.toDouble() ?? 0;
             final r = (set['reps'] as num?)?.toInt() ?? 0;
@@ -178,7 +219,94 @@ class AnalyticsProcessor {
     }).toList();
   }
 
-  /// Get weekly progress for S/B/D.
+  /// Top variations for a lift
+  List<Map<String, dynamic>> getTopVariations(String lift, TimeRange range) {
+    final filtered = _filterByRange(range);
+    final Map<String, double> topWeights = {};
+
+    for (final session in filtered) {
+      for (final ex in (session['exercises'] as List? ?? [])) {
+        final name = ex['name']?.toString() ?? '';
+        if (!_isLift(name, lift)) continue;
+
+        double maxW = 0;
+        for (final set in (ex['sets'] as List? ?? [])) {
+          final w = (set['weight'] as num?)?.toDouble() ?? 0;
+          if (w > maxW) maxW = w;
+        }
+
+        if (maxW > (topWeights[name] ?? 0)) {
+          topWeights[name] = maxW;
+        }
+      }
+    }
+
+    final list = topWeights.entries.map((e) => {'name': e.key, 'weight': e.value}).toList();
+    list.sort((a, b) => (b['weight'] as double).compareTo(a['weight'] as double));
+    return list;
+  }
+
+  LiftMetrics getLiftMetrics(String lift, TimeRange range) {
+    final filtered = _filterByRange(range);
+    
+    double currentMax = 0;
+    double est1RM = 0;
+    double prevEst1RM = 0;
+    
+    double volume7d = 0;
+    double prevVolume7d = 0;
+    
+    int totalSets = 0;
+    int prevTotalSets = 0;
+
+    final now = DateTime.now();
+    final d7 = now.subtract(const Duration(days: 7));
+    final d14 = now.subtract(const Duration(days: 14));
+
+    for (final session in filtered) {
+      final date = DateTime.tryParse(session['date']?.toString() ?? '');
+      if (date == null) continue;
+
+      for (final ex in (session['exercises'] as List? ?? [])) {
+        final name = ex['name']?.toString() ?? '';
+        if (!_isLift(name, lift)) continue;
+
+        for (final set in (ex['sets'] as List? ?? [])) {
+          final w = (set['weight'] as num?)?.toDouble() ?? 0;
+          final r = (set['reps'] as num?)?.toInt() ?? 0;
+          final c = (set['sets'] as num?)?.toInt() ?? 1;
+          
+          if (w > currentMax) currentMax = w;
+          final e1rm = estimateE1RM(w, r);
+          
+          if (date.isAfter(d7)) {
+            if (e1rm > est1RM) est1RM = e1rm;
+            volume7d += (w * r * c);
+            totalSets += c;
+          } else if (date.isAfter(d14)) {
+            if (e1rm > prevEst1RM) prevEst1RM = e1rm;
+            prevVolume7d += (w * r * c);
+            prevTotalSets += c;
+          } else {
+            if (e1rm > prevEst1RM) prevEst1RM = e1rm;
+          }
+        }
+      }
+    }
+    
+    if (est1RM == 0 && prevEst1RM > 0) est1RM = prevEst1RM;
+
+    return LiftMetrics(
+      currentMax: currentMax,
+      est1RM: est1RM,
+      volume7d: volume7d,
+      totalSets: totalSets,
+      prevVolume7d: prevVolume7d,
+      prevTotalSets: prevTotalSets,
+      prevEst1RM: prevEst1RM,
+    );
+  }
+
   List<LiftProgress> getWeeklyProgress(TimeRange range) {
     final lifts = ['Squat', 'Bench', 'Deadlift'];
     final progress = <LiftProgress>[];
@@ -199,13 +327,11 @@ class AnalyticsProcessor {
         continue;
       }
 
-      // Compare last 2 data points
       final current = points.last.value;
       final previous = points[points.length - 2].value;
       final change = current - previous;
       final pct = previous > 0 ? (change / previous) * 100 : 0.0;
 
-      // Detect plateau: last 3+ points within 2% of each other
       TrendDirection trend;
       if (points.length >= 3) {
         final last3 = points.sublist(points.length - 3);
@@ -233,44 +359,42 @@ class AnalyticsProcessor {
         trend: trend,
       ));
     }
-
     return progress;
   }
 
-  /// Generate 2–3 smart insights.
-  List<Insight> getInsights(TimeRange range) {
+  List<Insight> getInsights(TimeRange range, {String? lift}) {
     final insights = <Insight>[];
-    final progress = getWeeklyProgress(range);
-    final volumeTrend = getVolumeTrend(range);
+    final targetLifts = lift != null ? [lift] : ['Squat', 'Bench', 'Deadlift'];
+    final progress = getWeeklyProgress(range).where((p) => targetLifts.contains(p.lift)).toList();
+    final volumeTrend = getVolumeTrend(range, lift: lift);
 
-    // 1. Check for PRs / best e1RM in range
-    for (final lift in ['Squat', 'Bench', 'Deadlift']) {
+    for (final l in targetLifts) {
       if (insights.length >= 3) break;
-      final points = getStrengthTrend(lift, range);
+      final points = getStrengthTrend(l, range);
       if (points.length >= 2) {
         final allValues = points.map((p) => p.value).toList();
         final maxVal = allValues.reduce(math.max);
         if (points.last.value == maxVal && points.last.value > points[points.length - 2].value) {
           insights.add(Insight(
-            text: '$lift hit a new peak e1RM of ${maxVal.toStringAsFixed(0)}kg',
+            text: '$l strength is improving!',
             type: InsightType.positive,
+            subtext: 'Your estimated 1RM increased recently.',
           ));
         }
       }
     }
 
-    // 2. Detect plateaus
     for (final p in progress) {
       if (insights.length >= 3) break;
       if (p.trend == TrendDirection.plateau) {
         insights.add(Insight(
-          text: '${p.lift} has plateaued — consider adjusting programming',
+          text: '${p.lift} has plateaued',
           type: InsightType.warning,
+          subtext: 'Consider adjusting your programming to break the plateau.',
         ));
       }
     }
 
-    // 3. Volume trend analysis
     if (volumeTrend.length >= 2 && insights.length < 3) {
       final lastVol = volumeTrend.last.volume;
       final prevVol = volumeTrend[volumeTrend.length - 2].volume;
@@ -278,58 +402,25 @@ class AnalyticsProcessor {
         final pct = ((lastVol - prevVol) / prevVol) * 100;
         if (pct > 15) {
           insights.add(Insight(
-            text: 'Volume up ${pct.toStringAsFixed(0)}% this week — manage fatigue',
-            type: InsightType.warning,
+            text: 'Great volume this month!',
+            type: InsightType.positive,
+            subtext: 'You\'re training ${pct.toStringAsFixed(0)}% more volume.',
           ));
         } else if (pct < -15) {
           insights.add(Insight(
-            text: 'Volume dropped ${pct.abs().toStringAsFixed(0)}% — possible deload or missed sessions',
+            text: 'Recovery might be an issue.',
             type: InsightType.warning,
-          ));
-        } else if (pct > 0) {
-          insights.add(Insight(
-            text: 'Consistent volume progression (+${pct.toStringAsFixed(0)}%)',
-            type: InsightType.positive,
+            subtext: 'Your volume dropped ${pct.abs().toStringAsFixed(0)}%. Consider taking an extra rest day.',
           ));
         }
       }
     }
 
-    // 4. Strongest lift trending
-    if (insights.length < 3) {
-      final upLifts = progress.where((p) => p.trend == TrendDirection.up).toList();
-      if (upLifts.isNotEmpty) {
-        final best = upLifts.reduce((a, b) => a.changePercent > b.changePercent ? a : b);
-        insights.add(Insight(
-          text: '${best.lift} progressing strongest (+${best.changePercent.toStringAsFixed(1)}%)',
-          type: InsightType.positive,
-        ));
-      }
-    }
-
-    // 5. Session frequency
-    if (insights.length < 3) {
-      final filtered = _filterByRange(range);
-      final weeks = range.days / 7.0;
-      final freq = filtered.length / weeks;
-      if (freq >= 4) {
-        insights.add(Insight(
-          text: 'Averaging ${freq.toStringAsFixed(1)} sessions/week — solid consistency',
-          type: InsightType.positive,
-        ));
-      } else if (freq < 2 && filtered.isNotEmpty) {
-        insights.add(Insight(
-          text: 'Only ${freq.toStringAsFixed(1)} sessions/week — try to increase frequency',
-          type: InsightType.warning,
-        ));
-      }
-    }
-
-    // Fallback
     if (insights.isEmpty) {
       insights.add(Insight(
-        text: 'Keep logging sessions to unlock deeper insights',
+        text: 'Keep logging sessions.',
         type: InsightType.neutral,
+        subtext: 'Log more to unlock deeper insights.',
       ));
     }
 
