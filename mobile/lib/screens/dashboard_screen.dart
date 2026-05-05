@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/draft_service.dart';
+import '../services/offline_queue.dart';
 import '../screens/add_session_screen.dart';
 import '../screens/sessions_screen.dart';
 import '../screens/analytics_screen.dart';
@@ -44,6 +45,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _timerTick;
 
   int _navIndex = 0;
+  int _offlineCount = 0;
+  bool _isSyncing = false;
 
   @override
   void initState() {
@@ -141,15 +144,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('cache_dashboard', jsonEncode({'sessions': sessions, 'prs': prs}));
       
+      final offlineCount = await OfflineQueue.getLength();
+      
       if (mounted) {
         setState(() {
           _sessions = sessions;
           _prs = prs;
+          _offlineCount = offlineCount;
           _loading = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _loading = false);
+      final offlineCount = await OfflineQueue.getLength();
+      if (mounted) {
+        setState(() {
+          _offlineCount = offlineCount;
+          _loading = false;
+        });
+      }
     } finally {
       _checkDraft();
     }
@@ -173,6 +185,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _checkDraft();
   }
 
+  Future<void> _syncOfflineData() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+    try {
+      await OfflineQueue.syncAll();
+      await _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Offline data synced successfully'),
+          backgroundColor: _accentBlueBg,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Sync failed, please check connection'),
+          backgroundColor: _cardBg,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -191,6 +229,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
                     children: [
                       _buildHeader(),
+                      if (_offlineCount > 0) ...[
+                        const SizedBox(height: 16),
+                        _buildOfflineBanner(),
+                      ],
                       const SizedBox(height: 24),
                       _buildNextSessionCard(),
                       const SizedBox(height: 16),
@@ -296,6 +338,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
           style: TextStyle(fontSize: 15, color: _textSecondary),
         ),
       ],
+    );
+  }
+
+  Widget _buildOfflineBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2D1818),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF5E2B2B)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.sync_problem, color: Color(0xFFE87C7C), size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Unsynced Sessions', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                Text('You have $_offlineCount session(s) pending sync.', style: const TextStyle(color: Color(0xFFD6A3A3), fontSize: 12)),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: _isSyncing ? null : _syncOfflineData,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE87C7C),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              minimumSize: const Size(0, 0),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 0,
+            ),
+            child: _isSyncing 
+                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Text('Sync', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
     );
   }
 
