@@ -12,19 +12,8 @@ import '../screens/add_session_screen.dart';
 import '../screens/sessions_screen.dart';
 import '../screens/analytics_screen.dart';
 import '../screens/profile_screen.dart';
-
-// Dark Blue Theme Constants
-const Color _bg = Color(0xFF090D14);
-const Color _cardBg = Color(0xFF151923);
-const Color _borderColor = Color(0xFF222836);
-const Color _textPrimary = Colors.white;
-const Color _textSecondary = Color(0xFF94A3B8);
-const Color _textMuted = Color(0xFF475569);
-const Color _accentBlue = Color(0xFF2563EB);
-const Color _accentBlueLight = Color(0xFF3B82F6);
-const Color _accentBlueBg = Color(0xFF172554);
-const Color _accentGreen = Color(0xFF22C55E);
-const Color _accentRed = Color(0xFFEF4444);
+import '../services/analytics_processor.dart';
+import '../theme/app_colors.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -36,7 +25,6 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   List<dynamic> _sessions = [];
   Map<String, dynamic> _prs = {'Squat': 0, 'Bench': 0, 'Deadlift': 0};
-  bool _loading = true;
 
   bool _hasDraft = false;
   int _accumulatedSeconds = 0;
@@ -45,6 +33,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _timerTick;
 
   int _navIndex = 0;
+  final Set<int> _visitedTabs = {0};
   int _offlineCount = 0;
   bool _isSyncing = false;
 
@@ -94,7 +83,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _startTimer() {
     _timerTick?.cancel();
     _timerTick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      // Timer display is now isolated in _DraftTimerDisplay widget
+      // Only rebuild if we need to update non-timer state
     });
   }
 
@@ -120,7 +110,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         setState(() {
           _sessions = data['sessions'] ?? [];
           _prs = (data['prs'] as Map<String, dynamic>?) ?? _prs;
-          _loading = false;
         });
       }
     }
@@ -151,7 +140,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _sessions = sessions;
           _prs = prs;
           _offlineCount = offlineCount;
-          _loading = false;
+
         });
       }
     } catch (e) {
@@ -159,22 +148,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (mounted) {
         setState(() {
           _offlineCount = offlineCount;
-          _loading = false;
         });
       }
     } finally {
       _checkDraft();
     }
-  }
-
-  double _getMaxWeight(Map<String, dynamic> ex) {
-    final sets = ex['sets'] as List? ?? [];
-    double max = 0;
-    for (final st in sets) {
-      final w = (st['weight'] as num?)?.toDouble() ?? 0.0;
-      if (w > max) max = w;
-    }
-    return max;
   }
 
   void _openSessionScreen() async {
@@ -194,7 +172,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Offline data synced successfully'),
-          backgroundColor: _accentBlueBg,
+          backgroundColor: AppColors.accentBlueBg,
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -202,7 +180,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Sync failed, please check connection'),
-          backgroundColor: _cardBg,
+          backgroundColor: AppColors.cardBg,
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -214,40 +192,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: AppColors.bg,
       body: SafeArea(
         child: Stack(
           children: [
             IndexedStack(
               index: _navIndex,
-              children: [
-                RefreshIndicator(
-                  onRefresh: _loadData,
-                  color: _accentBlue,
-                  backgroundColor: _cardBg,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
-                    children: [
-                      _buildHeader(),
-                      if (_offlineCount > 0) ...[
-                        const SizedBox(height: 16),
-                        _buildOfflineBanner(),
-                      ],
-                      const SizedBox(height: 24),
-                      _buildNextSessionCard(),
-                      const SizedBox(height: 16),
-                      _buildSBDStatsCard(),
-                      const SizedBox(height: 16),
-                      _buildWeeklyProgressCard(),
-                      const SizedBox(height: 16),
-                      _buildRecentSessionsList(),
-                    ],
-                  ),
-                ),
-                SessionsScreen(sessions: _sessions, onRefresh: _loadData, prs: _prs),
-                const AnalyticsScreen(),
-                const ProfileScreen(),
-              ],
+              children: List.generate(4, (i) {
+                // Lazy loading: only build tabs that have been visited
+                if (!_visitedTabs.contains(i)) {
+                  return const SizedBox.shrink();
+                }
+                switch (i) {
+                  case 0:
+                    return RefreshIndicator(
+                      onRefresh: _loadData,
+                      color: AppColors.accentBlue,
+                      backgroundColor: AppColors.cardBg,
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
+                        children: [
+                          _buildHeader(),
+                          if (_offlineCount > 0) ...[
+                            const SizedBox(height: 16),
+                            _buildOfflineBanner(),
+                          ],
+                          const SizedBox(height: 24),
+                          _buildNextSessionCard(),
+                          const SizedBox(height: 16),
+                          _buildSBDStatsCard(),
+                          const SizedBox(height: 16),
+                          _buildWeeklyProgressCard(),
+                          const SizedBox(height: 16),
+                          _buildRecentSessionsList(),
+                        ],
+                      ),
+                    );
+                  case 1:
+                    return SessionsScreen(sessions: _sessions, onRefresh: _loadData, prs: _prs);
+                  case 2:
+                    return const AnalyticsScreen();
+                  case 3:
+                    return const ProfileScreen();
+                  default:
+                    return const SizedBox.shrink();
+                }
+              }),
             ),
             _buildBottomNav(),
           ],
@@ -274,52 +264,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.fitness_center, color: _accentBlueLight, size: 28),
+                const Icon(Icons.fitness_center, color: AppColors.accentBlueLight, size: 28),
                 const SizedBox(width: 12),
-                const Text('SBD', style: TextStyle(color: _textPrimary, fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                const Text('SBD', style: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
               ],
             ),
             Row(
               children: [
-                Stack(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: _cardBg,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: _borderColor),
-                      ),
-                      child: const Icon(Icons.notifications_none, color: _textSecondary, size: 20),
-                    ),
-                    Positioned(
-                      top: 10,
-                      right: 12,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: _accentBlueLight,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 12),
                 Container(
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: _cardBg,
+                    color: AppColors.cardBg,
                     shape: BoxShape.circle,
-                    border: Border.all(color: _borderColor),
+                    border: Border.all(color: AppColors.borderColor),
                   ),
                   child: Center(
                     child: Text(
                       initial,
-                      style: const TextStyle(color: _textPrimary, fontSize: 16, fontWeight: FontWeight.w700),
+                      style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -330,12 +293,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 24),
         Text(
           '$greeting, $username 👋',
-          style: const TextStyle(fontSize: 22, color: _textPrimary, fontWeight: FontWeight.w700, letterSpacing: 0.2),
+          style: const TextStyle(fontSize: 22, color: AppColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 0.2),
         ),
         const SizedBox(height: 4),
         const Text(
           'Stay consistent, get stronger.',
-          style: TextStyle(fontSize: 15, color: _textSecondary),
+          style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
         ),
       ],
     );
@@ -387,28 +350,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _cardBg,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.calendar_month, color: _accentBlueLight, size: 14),
+              const Icon(Icons.calendar_month, color: AppColors.accentBlueLight, size: 14),
               const SizedBox(width: 6),
-              const Text('NEXT SESSION', style: TextStyle(fontSize: 12, color: _accentBlueLight, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+              const Text('NEXT SESSION', style: TextStyle(fontSize: 12, color: AppColors.accentBlueLight, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
             ],
           ),
           const SizedBox(height: 12),
           Text(
             _hasDraft ? 'Workout in progress' : 'Squat Day',
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: _textPrimary, letterSpacing: 0.3),
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.textPrimary, letterSpacing: 0.3),
           ),
           const SizedBox(height: 12),
           if (_hasDraft)
-            Text(_timerDisplay, style: const TextStyle(fontSize: 16, color: _textSecondary, fontFamily: 'monospace'))
+            Text(_timerDisplay, style: const TextStyle(fontSize: 16, color: AppColors.textSecondary, fontFamily: 'monospace'))
           else
             Builder(builder: (_) {
               final todayDay = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][DateTime.now().weekday - 1];
@@ -431,17 +394,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
               }
               return Row(
                 children: [
-                  const Icon(Icons.event_note, color: _textMuted, size: 14),
+                  const Icon(Icons.event_note, color: AppColors.textMuted, size: 14),
                   const SizedBox(width: 6),
-                  Text(todayDay, style: const TextStyle(fontSize: 13, color: _textSecondary)),
-                  const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('•', style: TextStyle(color: _textMuted))),
-                  const Icon(Icons.inventory_2_outlined, color: _textMuted, size: 14),
+                  Text(todayDay, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                  const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('•', style: TextStyle(color: AppColors.textMuted))),
+                  const Icon(Icons.inventory_2_outlined, color: AppColors.textMuted, size: 14),
                   const SizedBox(width: 6),
-                  Text('Block $currentBlock', style: const TextStyle(fontSize: 13, color: _textSecondary)),
-                  const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('•', style: TextStyle(color: _textMuted))),
-                  const Icon(Icons.show_chart, color: _textMuted, size: 14),
+                  Text('Block $currentBlock', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                  const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('•', style: TextStyle(color: AppColors.textMuted))),
+                  const Icon(Icons.show_chart, color: AppColors.textMuted, size: 14),
                   const SizedBox(width: 6),
-                  Text('Week $currentWeek', style: const TextStyle(fontSize: 13, color: _textSecondary)),
+                  Text('Week $currentWeek', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                 ],
               );
             }),
@@ -450,7 +413,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: double.infinity,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: _accentBlue,
+                backgroundColor: AppColors.accentBlue,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -489,9 +452,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _cardBg,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         children: [
@@ -504,19 +467,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          Container(height: 1, color: _borderColor),
+          Container(height: 1, color: AppColors.borderColor),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
-                  const Icon(Icons.monitor_weight_outlined, size: 18, color: _textSecondary),
+                  const Icon(Icons.monitor_weight_outlined, size: 18, color: AppColors.textSecondary),
                   const SizedBox(width: 8),
-                  const Text('Total Volume', style: TextStyle(color: _textSecondary, fontSize: 14, fontWeight: FontWeight.w500)),
+                  const Text('Total Volume', style: TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w500)),
                 ],
               ),
-              const Text('480.0 kg', style: TextStyle(color: _accentBlueLight, fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+              Text(
+                '${((_prs['Squat'] ?? 0) + (_prs['Bench'] ?? 0) + (_prs['Deadlift'] ?? 0)).toString().replaceAll('.0', '')} kg',
+                style: const TextStyle(color: AppColors.accentBlueLight, fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'monospace'),
+              ),
             ],
           ),
         ],
@@ -529,9 +495,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         Row(
           children: [
-            Icon(icon, size: 16, color: _accentBlueLight),
+            Icon(icon, size: 16, color: AppColors.accentBlueLight),
             const SizedBox(width: 6),
-            Text(title, style: const TextStyle(fontSize: 12, color: _textSecondary, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+            Text(title, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
           ],
         ),
         const SizedBox(height: 8),
@@ -539,13 +505,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(current.toString().replaceAll('.0', ''), style: const TextStyle(fontSize: 20, color: _textPrimary, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+            Text(current.toString().replaceAll('.0', ''), style: const TextStyle(fontSize: 20, color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
             const SizedBox(width: 4),
-            const Text('kg', style: TextStyle(fontSize: 12, color: _textSecondary, fontWeight: FontWeight.w600)),
+            const Text('kg', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
           ],
         ),
         const SizedBox(height: 4),
-        Text('Best: $best kg', style: const TextStyle(fontSize: 11, color: _textMuted)),
+        Text('Best: $best kg', style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
       ],
     );
   }
@@ -555,9 +521,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _cardBg,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -565,36 +531,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('WEEKLY PROGRESS', style: TextStyle(fontSize: 12, color: _textPrimary, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+              const Text('WEEKLY PROGRESS', style: TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AnalyticsScreen())),
                 child: Row(
                   children: [
-                    const Text('View details', style: TextStyle(fontSize: 13, color: _accentBlueLight, fontWeight: FontWeight.w500)),
+                    const Text('View details', style: TextStyle(fontSize: 13, color: AppColors.accentBlueLight, fontWeight: FontWeight.w500)),
                     const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right, size: 16, color: _accentBlueLight),
+                    const Icon(Icons.chevron_right, size: 16, color: AppColors.accentBlueLight),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 24),
-          _buildProgressRow('Squat', Icons.sports_gymnastics, '+8.5 kg', true),
-          const SizedBox(height: 16),
-          _buildProgressRow('Bench', Icons.airline_seat_flat_angled, '+10 kg', true),
-          const SizedBox(height: 16),
-          _buildProgressRow('Volume', Icons.bar_chart, '-39.3%', false),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              const Icon(Icons.info_outline, size: 14, color: _textMuted),
-              const SizedBox(width: 8),
-              const Text('Volume dropping — risk of plateau', style: TextStyle(fontSize: 12, color: _textMuted)),
-            ],
-          )
+          ..._buildRealWeeklyProgress(),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildRealWeeklyProgress() {
+    if (_sessions.isEmpty) {
+      return [
+        const Text('Log sessions to see progress', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+      ];
+    }
+
+    final processor = AnalyticsProcessor(_sessions);
+    final progress = processor.getWeeklyProgress(TimeRange.days30);
+    final widgets = <Widget>[];
+    final icons = {'Squat': Icons.sports_gymnastics, 'Bench': Icons.airline_seat_flat_angled, 'Deadlift': Icons.fitness_center};
+
+    for (final p in progress) {
+      if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 16));
+      final diff = p.change >= 0 ? '+${p.change.toStringAsFixed(1)} kg' : '${p.change.toStringAsFixed(1)} kg';
+      widgets.add(_buildProgressRow(p.lift, icons[p.lift] ?? Icons.fitness_center, diff, p.change >= 0));
+    }
+
+    // Volume insight
+    final volumeTrend = processor.getVolumeTrend(TimeRange.days30);
+    if (volumeTrend.length >= 2) {
+      final lastVol = volumeTrend.last.volume;
+      final prevVol = volumeTrend[volumeTrend.length - 2].volume;
+      if (prevVol > 0) {
+        final pct = ((lastVol - prevVol) / prevVol) * 100;
+        if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 16));
+        widgets.add(_buildProgressRow('Volume', Icons.bar_chart, '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(1)}%', pct >= 0));
+      }
+    }
+
+    return widgets;
   }
 
   Widget _buildProgressRow(String title, IconData icon, String diff, bool isPositive) {
@@ -603,16 +590,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         Row(
           children: [
-            Icon(icon, size: 18, color: _accentBlueLight),
+            Icon(icon, size: 18, color: AppColors.accentBlueLight),
             const SizedBox(width: 12),
-            Text(title, style: const TextStyle(fontSize: 15, color: _textSecondary, fontWeight: FontWeight.w500)),
+            Text(title, style: const TextStyle(fontSize: 15, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
           ],
         ),
         Row(
           children: [
-            Text(diff, style: TextStyle(fontSize: 15, color: isPositive ? _accentGreen : _accentRed, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+            Text(diff, style: TextStyle(fontSize: 15, color: isPositive ? AppColors.accentGreen : AppColors.accentRed, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
             const SizedBox(width: 6),
-            Icon(isPositive ? Icons.arrow_upward : Icons.arrow_downward, size: 16, color: isPositive ? _accentGreen : _accentRed),
+            Icon(isPositive ? Icons.arrow_upward : Icons.arrow_downward, size: 16, color: isPositive ? AppColors.accentGreen : AppColors.accentRed),
           ],
         ),
       ],
@@ -630,7 +617,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('RECENT SESSION', style: TextStyle(fontSize: 12, color: _textPrimary, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+            const Text('RECENT SESSION', style: TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
             GestureDetector(
               onTap: () {
                 setState(() {
@@ -639,9 +626,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               },
               child: Row(
                 children: [
-                  const Text('View all', style: TextStyle(fontSize: 13, color: _accentBlueLight, fontWeight: FontWeight.w500)),
+                  const Text('View all', style: TextStyle(fontSize: 13, color: AppColors.accentBlueLight, fontWeight: FontWeight.w500)),
                   const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right, size: 16, color: _accentBlueLight),
+                  const Icon(Icons.chevron_right, size: 16, color: AppColors.accentBlueLight),
                 ],
               ),
             ),
@@ -649,7 +636,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(height: 16),
         if (recent.isEmpty)
-          Text('No recent session found for $todayDay.', style: const TextStyle(color: _textMuted, fontSize: 14))
+          Text('No recent session found for $todayDay.', style: const TextStyle(color: AppColors.textMuted, fontSize: 14))
         else
           _RecentSessionTile(session: recent.first),
       ],
@@ -663,8 +650,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Container(
         height: 80,
         decoration: BoxDecoration(
-          color: _bg,
-          border: const Border(top: BorderSide(color: _borderColor)),
+          color: AppColors.bg,
+          border: const Border(top: BorderSide(color: AppColors.borderColor)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -691,15 +678,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (index == 2) return; // FAB handled separately
         setState(() {
           _navIndex = stackIndex;
+          _visitedTabs.add(stackIndex);
         });
       },
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: active ? _accentBlueLight : _textMuted, size: 24),
+          Icon(icon, color: active ? AppColors.accentBlueLight : AppColors.textMuted, size: 24),
           const SizedBox(height: 4),
-          Text(label, style: TextStyle(color: active ? _accentBlueLight : _textMuted, fontSize: 11, fontWeight: active ? FontWeight.w600 : FontWeight.w500)),
+          Text(label, style: TextStyle(color: active ? AppColors.accentBlueLight : AppColors.textMuted, fontSize: 11, fontWeight: active ? FontWeight.w600 : FontWeight.w500)),
         ],
       ),
     );
@@ -713,11 +701,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         height: 56,
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: _accentBlue,
+          color: AppColors.accentBlue,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: _accentBlue.withOpacity(0.3),
+              color: AppColors.accentBlue.withOpacity(0.3),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -812,11 +800,11 @@ class _RecentSessionTileState extends State<_RecentSessionTile> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _accentBlueLight)),
+          Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentBlueLight)),
           if (maxWeight > 0)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('Top: ${maxWeight.toString().replaceAll('.0', '')} kg x $maxReps', style: const TextStyle(fontSize: 12, color: _textSecondary, fontFamily: 'monospace')),
+              child: Text('Top: ${maxWeight.toString().replaceAll('.0', '')} kg x $maxReps', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontFamily: 'monospace')),
             )
         ],
       ),
@@ -866,9 +854,9 @@ class _RecentSessionTileState extends State<_RecentSessionTile> {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
-          color: _cardBg,
+          color: AppColors.cardBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _borderColor),
+          border: Border.all(color: AppColors.borderColor),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -878,13 +866,13 @@ class _RecentSessionTileState extends State<_RecentSessionTile> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: _accentBlueBg,
+                    color: AppColors.accentBlueBg,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     dayPrefix,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: _accentBlueLight, fontSize: 11, fontWeight: FontWeight.w700, height: 1.3),
+                    style: const TextStyle(color: AppColors.accentBlueLight, fontSize: 11, fontWeight: FontWeight.w700, height: 1.3),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -892,9 +880,9 @@ class _RecentSessionTileState extends State<_RecentSessionTile> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(mainLiftName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _textPrimary)),
+                      Text(mainLiftName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                       const SizedBox(height: 4),
-                      Text('${vol.toStringAsFixed(0)} kg • $sets sets • $dur', style: const TextStyle(fontSize: 12, color: _textSecondary, fontFamily: 'monospace')),
+                      Text('${vol.toStringAsFixed(0)} kg • $sets sets • $dur', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontFamily: 'monospace')),
                     ],
                   ),
                 ),
@@ -903,16 +891,16 @@ class _RecentSessionTileState extends State<_RecentSessionTile> {
                     if (relativeTime.isNotEmpty && !_expanded)
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
-                        child: Text(relativeTime, style: const TextStyle(fontSize: 12, color: _textSecondary)),
+                        child: Text(relativeTime, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       ),
-                    Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 20, color: _textMuted),
+                    Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 20, color: AppColors.textMuted),
                   ],
                 ),
               ],
             ),
             if (_expanded && exercises.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Container(height: 1, color: _borderColor),
+              Container(height: 1, color: AppColors.borderColor),
               ...exercises.map((ex) => _buildCompactExerciseRow(ex)).toList(),
             ]
           ],

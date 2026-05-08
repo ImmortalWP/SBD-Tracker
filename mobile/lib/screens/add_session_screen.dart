@@ -6,21 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/offline_queue.dart';
 import '../services/draft_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 import 'package:intl/intl.dart';
-
-// Dark Blue Theme Constants
-const Color _bg = Color(0xFF090D14);
-const Color _cardBg = Color(0xFF151923);
-const Color _inputBg = Color(0xFF11141D); // Input slightly darker than card
-const Color _borderColor = Color(0xFF222836);
-const Color _textPrimary = Colors.white;
-const Color _textSecondary = Color(0xFF94A3B8);
-const Color _textMuted = Color(0xFF475569);
-const Color _accentBlue = Color(0xFF2563EB);
-const Color _accentBlueBg = Color(0xFF172554);
-const Color _accentGreen = Color(0xFF22C55E);
-const Color _accentRed = Color(0xFFEF4444);
 
 class AddSessionScreen extends StatefulWidget {
   final Map<String, dynamic>? existingSession;
@@ -47,6 +34,10 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
 
   Timer? _autoSaveTimer;
   List<dynamic> _allSessionsCache = [];
+  Map<String, List<Map<String, dynamic>>> _exerciseHistoryIndex = {};
+  Timer? _debounceTimer;
+  bool _isDirty = false;
+  static int _idCounter = 0;
 
   final _days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   final _mainLifts = ['Squat', 'Bench', 'Deadlift'];
@@ -100,8 +91,25 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       if (cached != null) {
         final data = jsonDecode(cached);
         _allSessionsCache = data['sessions'] ?? [];
+        _buildExerciseHistoryIndex();
       }
     } catch (_) {}
+  }
+
+  /// Build a lookup index: exerciseName(lowercase) -> list of past sets
+  void _buildExerciseHistoryIndex() {
+    _exerciseHistoryIndex.clear();
+    for (final session in _allSessionsCache) {
+      final exercises = session['exercises'] as List? ?? [];
+      for (final ex in exercises) {
+        final name = (ex['name']?.toString() ?? '').toLowerCase().trim();
+        if (name.isEmpty) continue;
+        final sets = ex['sets'] as List? ?? [];
+        if (sets.isNotEmpty && !_exerciseHistoryIndex.containsKey(name)) {
+          _exerciseHistoryIndex[name] = List<Map<String, dynamic>>.from(sets);
+        }
+      }
+    }
   }
 
   Future<void> _fetchDynamicAccessories() async {
@@ -152,7 +160,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
 
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('Loaded from last $day'),
-      backgroundColor: _accentBlueBg,
+      backgroundColor: AppColors.accentBlueBg,
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
     ));
@@ -166,10 +174,11 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   }
 
   void _saveDraftSilent() {
-    if (_isEditing || _isDiscarding) return;
+    if (_isEditing || _isDiscarding || !_isDirty) return;
     final hasData = _exercises.any((e) => e.name.isNotEmpty);
     if (hasData) {
       _saveDraft();
+      _isDirty = false;
     } else {
       DraftService.clearDraft();
     }
@@ -239,33 +248,27 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       if (mounted) setState((){});
       return;
     }
-    
-    for (final session in _allSessionsCache) {
-      final exercises = session['exercises'] as List? ?? [];
-      for (final pastEx in exercises) {
-        if (pastEx['name']?.toString().toLowerCase() == newName.toLowerCase()) {
-           final sets = pastEx['sets'] as List? ?? [];
-           if (sets.isNotEmpty) {
-             ex.pastSets = List<Map<String, dynamic>>.from(sets);
-             for (final s in ex.sets) s.dispose();
-             ex.sets.clear();
-             for (final s in sets) {
-                final w = (s['weight'] ?? '').toString().replaceAll('.0','');
-                final r = (s['reps'] ?? '').toString();
-                final c = int.tryParse(s['sets']?.toString() ?? '1') ?? 1;
-                for (int i=0; i<c; i++) {
-                   ex.sets.add(_SetData(
-                     wCtrl: TextEditingController(text: w),
-                     sCtrl: TextEditingController(text: '1'),
-                     rCtrl: TextEditingController(text: r),
-                   ));
-                }
-             }
-             if (mounted) setState((){});
-           }
-           return;
+
+    // O(1) lookup via pre-built index
+    final sets = _exerciseHistoryIndex[newName.toLowerCase()];
+    if (sets != null && sets.isNotEmpty) {
+      ex.pastSets = sets;
+      for (final s in ex.sets) s.dispose();
+      ex.sets.clear();
+      for (final s in sets) {
+        final w = (s['weight'] ?? '').toString().replaceAll('.0','');
+        final r = (s['reps'] ?? '').toString();
+        final c = int.tryParse(s['sets']?.toString() ?? '1') ?? 1;
+        for (int i=0; i<c; i++) {
+          ex.sets.add(_SetData(
+            wCtrl: TextEditingController(text: w),
+            sCtrl: TextEditingController(text: '1'),
+            rCtrl: TextEditingController(text: r),
+          ));
         }
       }
+      if (mounted) setState((){});
+      return;
     }
     ex.pastSets = null;
     if (mounted) setState((){});
@@ -275,9 +278,8 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     _timerRunning = true;
     _timerStartTime ??= DateTime.now();
     _timerTick?.cancel();
-    _timerTick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
+    // No setState here - timer display is isolated in _TimerDisplay widget
+    _timerTick = Timer.periodic(const Duration(seconds: 1), (_) {});
   }
 
   void _toggleTimer() {
@@ -323,11 +325,11 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: _cardBg,
-        title: const Text('Discard Session?', style: TextStyle(color: _textPrimary)),
-        content: const Text('All entered data will be lost.', style: TextStyle(color: _textSecondary)),
+        backgroundColor: AppColors.cardBg,
+        title: const Text('Discard Session?', style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text('All entered data will be lost.', style: TextStyle(color: AppColors.textSecondary)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(color: _textMuted))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted))),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Discard', style: TextStyle(color: Color(0xFFD95A5A)))),
         ],
       ),
@@ -437,7 +439,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Saved offline'),
-            backgroundColor: _cardBg, behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.cardBg, behavior: SnackBarBehavior.floating,
           ));
           Navigator.pop(context, true);
         }
@@ -459,20 +461,20 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
         if (shouldPop && context.mounted) Navigator.of(context).pop();
       },
       child: Scaffold(
-        backgroundColor: _bg,
+        backgroundColor: AppColors.bg,
         appBar: AppBar(
-          backgroundColor: _bg,
+          backgroundColor: AppColors.bg,
           elevation: 0,
-          title: Text(_isEditing ? 'Edit Session' : 'Log Session', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _textPrimary)),
+          title: Text(_isEditing ? 'Edit Session' : 'Log Session', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
           centerTitle: true,
-          leading: IconButton(icon: const Icon(Icons.arrow_back_ios, color: _textPrimary, size: 20), onPressed: () async {
+          leading: IconButton(icon: const Icon(Icons.arrow_back_ios, color: AppColors.textPrimary, size: 20), onPressed: () async {
             final shouldPop = await _onWillPop();
             if (shouldPop && mounted) Navigator.pop(context);
           }),
           actions: [
             if (!_isEditing)
               IconButton(
-                icon: const Icon(Icons.more_vert, color: _textPrimary),
+                icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
                 onPressed: _discardDraft,
               ),
           ],
@@ -567,12 +569,12 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(DateFormat('E, d MMM yyyy').format(DateTime.tryParse(_date) ?? DateTime.now()), 
-                   style: const TextStyle(color: _textMuted, fontSize: 13, fontWeight: FontWeight.w500)),
+                   style: const TextStyle(color: AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: _accentBlueBg, borderRadius: BorderRadius.circular(6)),
+                decoration: BoxDecoration(color: AppColors.accentBlueBg, borderRadius: BorderRadius.circular(6)),
                 child: Text('${_exercises.isNotEmpty && _exercises.first.name.isNotEmpty ? _exercises.first.name : 'Workout'} Day', 
-                            style: const TextStyle(color: _accentBlue, fontSize: 12, fontWeight: FontWeight.w600)),
+                            style: const TextStyle(color: AppColors.accentBlue, fontSize: 12, fontWeight: FontWeight.w600)),
               )
             ],
           )
@@ -587,16 +589,16 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         decoration: BoxDecoration(
-          color: _inputBg,
-          border: Border.all(color: _borderColor),
+          color: AppColors.inputBg,
+          border: Border.all(color: AppColors.borderColor),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 14, color: _textSecondary),
+            Icon(icon, size: 14, color: AppColors.textSecondary),
             const SizedBox(width: 6),
-            Expanded(child: Text(text, style: const TextStyle(color: _textPrimary, fontSize: 13), overflow: TextOverflow.ellipsis)),
-            const Icon(Icons.keyboard_arrow_down, size: 16, color: _textSecondary),
+            Expanded(child: Text(text, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13), overflow: TextOverflow.ellipsis)),
+            const Icon(Icons.keyboard_arrow_down, size: 16, color: AppColors.textSecondary),
           ],
         ),
       ),
@@ -607,8 +609,8 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
-        color: _cardBg,
-        border: Border(top: BorderSide(color: _borderColor)),
+        color: AppColors.cardBg,
+        border: Border(top: BorderSide(color: AppColors.borderColor)),
       ),
       child: SafeArea(
         child: Row(
@@ -618,14 +620,14 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
                 onTap: _toggleTimer,
                 child: Row(
                   children: [
-                    const Icon(Icons.timer_outlined, color: _textSecondary, size: 24),
+                    const Icon(Icons.timer_outlined, color: AppColors.textSecondary, size: 24),
                     const SizedBox(width: 12),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(_timerRunning ? 'Workout Duration' : 'Paused', style: const TextStyle(fontSize: 10, color: _textMuted)),
-                        Text(_timerDisplay, style: const TextStyle(fontSize: 16, color: _textPrimary, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+                        Text(_timerRunning ? 'Workout Duration' : 'Paused', style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                        Text(_timerDisplay, style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
                       ],
                     ),
                   ],
@@ -635,14 +637,14 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
             Expanded(
               child: Row(
                 children: [
-                  const Icon(Icons.fitness_center, color: _textSecondary, size: 24),
+                  const Icon(Icons.fitness_center, color: AppColors.textSecondary, size: 24),
                   const SizedBox(width: 12),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('Exercises', style: TextStyle(fontSize: 10, color: _textMuted)),
-                      Text('${_exercises.length}', style: const TextStyle(fontSize: 16, color: _textPrimary, fontWeight: FontWeight.w700)),
+                      const Text('Exercises', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                      Text('${_exercises.length}', style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
                     ],
                   ),
                 ],
@@ -651,7 +653,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
             ElevatedButton(
               onPressed: _loading ? null : _submit,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _accentBlue,
+                backgroundColor: AppColors.accentBlue,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               ),
@@ -668,7 +670,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   void _showMetaEditDialog() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: _cardBg,
+      backgroundColor: AppColors.cardBg,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => Padding(
@@ -677,7 +679,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Edit Session Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _textPrimary)),
+            const Text('Edit Session Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
             const SizedBox(height: 20),
             Row(children: [
               Expanded(child: _numField(_blockCtrl, 'Block')),
@@ -688,8 +690,8 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
             DropdownButtonFormField<String>(
               value: _day,
               decoration: _deco('Day'),
-              dropdownColor: _cardBg,
-              style: const TextStyle(fontSize: 14, color: _textPrimary, fontWeight: FontWeight.w500),
+              dropdownColor: AppColors.cardBg,
+              style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, fontWeight: FontWeight.w500),
               items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
               onChanged: (v) {
                 if (v != null) {
@@ -707,7 +709,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
                     firstDate: DateTime(2020), lastDate: DateTime(2030),
                     builder: (context, child) => Theme(
                       data: ThemeData.dark().copyWith(
-                        colorScheme: const ColorScheme.dark(primary: _accentBlue, surface: _bg)
+                        colorScheme: const ColorScheme.dark(primary: AppColors.accentBlue, surface: AppColors.bg)
                       ),
                       child: child!,
                     ));
@@ -718,11 +720,11 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                decoration: BoxDecoration(color: _inputBg, borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(color: AppColors.inputBg, borderRadius: BorderRadius.circular(8)),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('Date', style: TextStyle(fontSize: 12, color: _textMuted)),
+                  const Text('Date', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
                   const SizedBox(height: 4),
-                  Text(_date, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _textPrimary)),
+                  Text(_date, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
                 ]),
               ),
             ),
@@ -730,7 +732,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: _accentBlue, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentBlue, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                 onPressed: () {
                   setState(() {});
                   Navigator.pop(ctx);
@@ -749,18 +751,18 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       controller: ctrl,
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _textPrimary),
+      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
       decoration: _deco(label),
     );
   }
 
   InputDecoration _deco(String label) => InputDecoration(
     labelText: label,
-    labelStyle: const TextStyle(fontSize: 12, color: _textMuted),
-    filled: true, fillColor: _inputBg,
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _borderColor)),
-    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _borderColor)),
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _accentBlue)),
+    labelStyle: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+    filled: true, fillColor: AppColors.inputBg,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.borderColor)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.borderColor)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.accentBlue)),
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
   );
 
@@ -770,15 +772,15 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
         decoration: BoxDecoration(
-          color: _inputBg,
+          color: AppColors.inputBg,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _borderColor),
+          border: Border.all(color: AppColors.borderColor),
         ),
         child: Column(
           children: [
-            Icon(icon, color: _accentBlue, size: 24),
+            Icon(icon, color: AppColors.accentBlue, size: 24),
             const SizedBox(height: 8),
-            Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _textPrimary)),
+            Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
           ],
         ),
       ),
@@ -789,7 +791,11 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _autoSaveTimer?.cancel();
-    if (!_isEditing) _saveDraftSilent();
+    _debounceTimer?.cancel();
+    if (!_isEditing) {
+      _isDirty = true; // Force final save
+      _saveDraftSilent();
+    }
     _blockCtrl.dispose();
     _weekCtrl.dispose();
     _notesCtrl.dispose();
@@ -811,7 +817,7 @@ class _ExData {
   _ExData({required this.id, required this.name, required this.category, required this.pctCtrl, required this.noteCtrl, required this.sets, this.pastSets});
 
   factory _ExData.empty(String category) => _ExData(
-    id: DateTime.now().microsecondsSinceEpoch.toString(),
+    id: 'ex_${_AddSessionScreenState._idCounter++}_${DateTime.now().millisecondsSinceEpoch}',
     name: '', category: category,
     pctCtrl: TextEditingController(),
     noteCtrl: TextEditingController(),
@@ -920,13 +926,13 @@ class _HistorySummaryState extends State<_HistorySummary> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('LAST SESSION', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _textMuted, letterSpacing: 0.5)),
+                  const Text('LAST SESSION', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)),
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Text('$wStr × $maxR', style: const TextStyle(fontSize: 16, color: _textPrimary, fontWeight: FontWeight.w700)),
+                      Text('$wStr × $maxR', style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
                       const SizedBox(width: 6),
-                      Text('($totalSets sets)', style: const TextStyle(fontSize: 13, color: _textSecondary)),
+                      Text('($totalSets sets)', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                     ],
                   ),
                 ],
@@ -935,12 +941,12 @@ class _HistorySummaryState extends State<_HistorySummary> {
                 onTap: () => setState(() => _expanded = !_expanded),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(border: Border.all(color: _borderColor), borderRadius: BorderRadius.circular(6)),
+                  decoration: BoxDecoration(border: Border.all(color: AppColors.borderColor), borderRadius: BorderRadius.circular(6)),
                   child: Row(
                     children: [
-                      const Text('View all', style: TextStyle(fontSize: 12, color: _textSecondary)),
+                      const Text('View all', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       const SizedBox(width: 4),
-                      Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 14, color: _textSecondary),
+                      Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 14, color: AppColors.textSecondary),
                     ],
                   ),
                 ),
@@ -958,13 +964,13 @@ class _HistorySummaryState extends State<_HistorySummary> {
                 final w = s['weight']?.toString().replaceAll('.0', '') ?? '0';
                 final r = s['reps']?.toString() ?? '0';
                 final c = int.tryParse(s['sets']?.toString() ?? '1') ?? 1;
-                if (c > 1) return Text('$c × ${w}kg × $r', style: const TextStyle(fontSize: 13, color: _textSecondary, fontFamily: 'monospace'));
-                return Text('${w}kg × $r', style: const TextStyle(fontSize: 13, color: _textSecondary, fontFamily: 'monospace'));
+                if (c > 1) return Text('$c × ${w}kg × $r', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontFamily: 'monospace'));
+                return Text('${w}kg × $r', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontFamily: 'monospace'));
               }).toList(),
             ),
           ),
         ],
-        const Divider(height: 1, color: _borderColor),
+        const Divider(height: 1, color: AppColors.borderColor),
       ],
     );
   }
@@ -982,8 +988,9 @@ class _ExerciseCard extends StatefulWidget {
   final bool canDelete;
   final VoidCallback onDelete;
   final Function(String) onExerciseChanged;
+  Timer? debounceTimer;
 
-  const _ExerciseCard({
+  _ExerciseCard({
     super.key,
     required this.index,
     required this.data,
@@ -1006,12 +1013,18 @@ class _ExerciseCardState extends State<_ExerciseCard> {
   _ExData get d => widget.data;
 
   @override
+  void dispose() {
+    widget.debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
-        color: _cardBg,
-        border: Border.all(color: _borderColor),
+        color: AppColors.cardBg,
+        border: Border.all(color: AppColors.borderColor),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1023,8 +1036,8 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                 index: widget.index,
                 child: Container(
                   width: 28, height: 28,
-                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _accentBlue)),
-                  child: Center(child: Text('${widget.index + 1}', style: const TextStyle(color: _accentBlue, fontWeight: FontWeight.w600, fontSize: 13))),
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.accentBlue)),
+                  child: Center(child: Text('${widget.index + 1}', style: const TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.w600, fontSize: 13))),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1033,7 +1046,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
               Container(
                 width: 56,
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(color: _accentBlueBg, borderRadius: BorderRadius.circular(6)),
+                decoration: BoxDecoration(color: AppColors.accentBlueBg, borderRadius: BorderRadius.circular(6)),
                 child: Row(
                   children: [
                     Expanded(
@@ -1042,25 +1055,25 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                         keyboardType: TextInputType.number,
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14, color: _accentBlue, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                        style: const TextStyle(fontSize: 14, color: AppColors.accentBlue, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
                         decoration: const InputDecoration(
                           hintText: '-',
-                          hintStyle: TextStyle(fontSize: 14, color: _accentBlue),
+                          hintStyle: TextStyle(fontSize: 14, color: AppColors.accentBlue),
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
                     ),
-                    const Text('%', style: TextStyle(fontSize: 12, color: _accentBlue, fontWeight: FontWeight.w600)),
+                    const Text('%', style: TextStyle(fontSize: 12, color: AppColors.accentBlue, fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),
               if (widget.canDelete) ...[
                 const SizedBox(width: 8),
                 PopupMenuButton<String>(
-                  color: _cardBg,
-                  icon: const Icon(Icons.more_vert, size: 20, color: _textSecondary),
+                  color: AppColors.cardBg,
+                  icon: const Icon(Icons.more_vert, size: 20, color: AppColors.textSecondary),
                   onSelected: (value) {
                     if (value == 'delete') widget.onDelete();
                   },
@@ -1076,26 +1089,26 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           ),
         ),
         
-        const Divider(height: 1, color: _borderColor),
+        const Divider(height: 1, color: AppColors.borderColor),
 
         if (d.pastSets != null && d.pastSets!.isNotEmpty)
            _HistorySummary(pastSets: d.pastSets!),
 
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text('LOG SETS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _textMuted, letterSpacing: 0.5)),
+          child: Text('LOG SETS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)),
         ),
 
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
-            Expanded(flex: 1, child: Center(child: Text('SETS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _textMuted, letterSpacing: 0.5)))),
+            Expanded(flex: 1, child: Center(child: Text('SETS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: 0.5)))),
             SizedBox(width: 8),
-            Expanded(flex: 2, child: Center(child: Text('WEIGHT (KG)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _textMuted, letterSpacing: 0.5)))),
+            Expanded(flex: 2, child: Center(child: Text('WEIGHT (KG)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: 0.5)))),
             SizedBox(width: 8),
-            Expanded(flex: 2, child: Center(child: Text('REPS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _textMuted, letterSpacing: 0.5)))),
+            Expanded(flex: 2, child: Center(child: Text('REPS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: 0.5)))),
             SizedBox(width: 8),
-            SizedBox(width: 44, child: Center(child: Icon(Icons.check, size: 14, color: _textMuted))),
+            SizedBox(width: 44, child: Center(child: Icon(Icons.check, size: 14, color: AppColors.textMuted))),
             SizedBox(width: 40),
           ]),
         ),
@@ -1119,16 +1132,16 @@ class _ExerciseCardState extends State<_ExerciseCard> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: _inputBg,
-                border: Border.all(color: _accentBlueBg),
+                color: AppColors.inputBg,
+                border: Border.all(color: AppColors.accentBlueBg),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.add, size: 16, color: _accentBlue),
+                  Icon(Icons.add, size: 16, color: AppColors.accentBlue),
                   SizedBox(width: 4),
-                  Text('Add Set', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _accentBlue)),
+                  Text('Add Set', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.accentBlue)),
                 ],
               ),
             ),
@@ -1141,15 +1154,15 @@ class _ExerciseCardState extends State<_ExerciseCard> {
             child: TextField(
               controller: d.noteCtrl,
               maxLines: null,
-              style: const TextStyle(fontSize: 13, color: _textPrimary),
+              style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
               decoration: InputDecoration(
                 hintText: 'Add a note for this lift...',
-                hintStyle: const TextStyle(fontSize: 13, color: _textMuted),
+                hintStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
                 filled: true,
-                fillColor: _inputBg,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _borderColor)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _borderColor)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _accentBlue)),
+                fillColor: AppColors.inputBg,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.borderColor)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.borderColor)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.accentBlue)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 isDense: true,
               ),
@@ -1183,17 +1196,20 @@ class _ExerciseCardState extends State<_ExerciseCard> {
          return TextField(
             controller: controller,
             focusNode: focusNode,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textPrimary),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
             decoration: const InputDecoration(
                hintText: 'Exercise name...',
-               hintStyle: TextStyle(color: _textMuted, fontSize: 16, fontWeight: FontWeight.normal),
+               hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 16, fontWeight: FontWeight.normal),
                border: InputBorder.none,
                isDense: true,
                contentPadding: EdgeInsets.zero,
             ),
             onChanged: (v) {
                d.name = v;
-               widget.onExerciseChanged(v);
+               widget.debounceTimer?.cancel();
+               widget.debounceTimer = Timer(const Duration(milliseconds: 300), () {
+                 widget.onExerciseChanged(v);
+               });
             },
          );
       },
@@ -1202,7 +1218,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
             alignment: Alignment.topLeft,
             child: Material(
                elevation: 4,
-               color: _inputBg,
+               color: AppColors.inputBg,
                borderRadius: BorderRadius.circular(8),
                child: ConstrainedBox(
                   constraints: BoxConstraints(maxHeight: 250, maxWidth: MediaQuery.of(context).size.width - 96),
@@ -1216,7 +1232,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
                            onTap: () => onSelected(option),
                            child: Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              child: Text(option, style: const TextStyle(color: _textPrimary, fontSize: 15, fontWeight: FontWeight.w500)),
+                              child: Text(option, style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w500)),
                            ),
                         );
                      },
@@ -1247,8 +1263,8 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           child: Container(
             width: 44, height: 42,
             decoration: BoxDecoration(
-              color: s.isCompleted ? _accentBlue : _inputBg,
-              border: Border.all(color: s.isCompleted ? _accentBlue : _borderColor),
+              color: s.isCompleted ? AppColors.accentBlue : AppColors.inputBg,
+              border: Border.all(color: s.isCompleted ? AppColors.accentBlue : AppColors.borderColor),
               borderRadius: BorderRadius.circular(6),
             ),
             child: s.isCompleted ? const Icon(Icons.check, size: 20, color: Colors.white) : null,
@@ -1257,7 +1273,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
         SizedBox(
           width: 40,
           child: d.sets.length > 1 ? IconButton(
-            icon: const Icon(Icons.close, size: 18, color: _textMuted),
+            icon: const Icon(Icons.close, size: 18, color: AppColors.textMuted),
             onPressed: () {
               setState(() {
                 s.dispose();
@@ -1274,8 +1290,8 @@ class _ExerciseCardState extends State<_ExerciseCard> {
     return Container(
       height: 42,
       decoration: BoxDecoration(
-        color: _inputBg,
-        border: Border.all(color: _borderColor),
+        color: AppColors.inputBg,
+        border: Border.all(color: AppColors.borderColor),
         borderRadius: BorderRadius.circular(6),
       ),
       child: TextField(
@@ -1286,10 +1302,10 @@ class _ExerciseCardState extends State<_ExerciseCard> {
             ? [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))]
             : [FilteringTextInputFormatter.digitsOnly],
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: isCompleted ? _textSecondary : _textPrimary, fontFamily: 'monospace'),
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: isCompleted ? AppColors.textSecondary : AppColors.textPrimary, fontFamily: 'monospace'),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(fontSize: 14, color: _textMuted),
+          hintStyle: const TextStyle(fontSize: 14, color: AppColors.textMuted),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
           isDense: true,

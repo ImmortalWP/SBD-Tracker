@@ -14,7 +14,14 @@ router.get('/', async (req, res) => {
     if (req.query.block) filter.block = Number(req.query.block);
     if (req.query.day) filter.day = { $regex: req.query.day, $options: 'i' };
 
-    const sessions = await Session.find(filter).sort({ block: 1, createdAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 100));
+    const skip = (page - 1) * limit;
+
+    const [sessions, total] = await Promise.all([
+      Session.find(filter).sort({ date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Session.countDocuments(filter),
+    ]);
     res.json(sessions);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -24,7 +31,7 @@ router.get('/', async (req, res) => {
 // GET /api/sessions/:id — single session
 router.get('/:id', async (req, res) => {
   try {
-    const session = await Session.findOne({ _id: req.params.id, user: req.userId });
+    const session = await Session.findOne({ _id: req.params.id, user: req.userId }).lean();
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);
   } catch (err) {
@@ -71,20 +78,37 @@ router.delete('/:id', async (req, res) => {
 // GET /api/sessions/stats/prs — personal records for main lifts
 router.get('/stats/prs', async (req, res) => {
   try {
-    const mainLifts = ['Squat', 'Bench', 'Deadlift'];
-    const prs = {};
+    const userId = new mongoose.Types.ObjectId(req.userId);
+    // Single aggregation with $facet — 3x fewer DB roundtrips
+    const result = await Session.aggregate([
+      { $match: { user: userId } },
+      { $unwind: '$exercises' },
+      { $match: { 'exercises.category': 'main' } },
+      { $unwind: '$exercises.sets' },
+      {
+        $facet: {
+          Squat: [
+            { $match: { 'exercises.name': 'Squat' } },
+            { $group: { _id: null, maxWeight: { $max: '$exercises.sets.weight' } } },
+          ],
+          Bench: [
+            { $match: { 'exercises.name': 'Bench' } },
+            { $group: { _id: null, maxWeight: { $max: '$exercises.sets.weight' } } },
+          ],
+          Deadlift: [
+            { $match: { 'exercises.name': 'Deadlift' } },
+            { $group: { _id: null, maxWeight: { $max: '$exercises.sets.weight' } } },
+          ],
+        },
+      },
+    ]);
 
-    for (const lift of mainLifts) {
-      const result = await Session.aggregate([
-        { $match: { user: new mongoose.Types.ObjectId(req.userId) } },
-        { $unwind: '$exercises' },
-        // Exact match instead of regex, so variations don't artificially lower/raise the main PR
-        { $match: { 'exercises.name': lift, 'exercises.category': 'main' } },
-        { $unwind: '$exercises.sets' },
-        { $group: { _id: null, maxWeight: { $max: '$exercises.sets.weight' } } },
-      ]);
-      prs[lift] = result.length > 0 ? result[0].maxWeight : 0;
-    }
+    const facets = result[0] || {};
+    const prs = {
+      Squat: facets.Squat?.[0]?.maxWeight || 0,
+      Bench: facets.Bench?.[0]?.maxWeight || 0,
+      Deadlift: facets.Deadlift?.[0]?.maxWeight || 0,
+    };
 
     res.json(prs);
   } catch (err) {

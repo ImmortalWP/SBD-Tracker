@@ -34,7 +34,9 @@ const SessionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Index for efficient queries
+// Indexes for efficient queries
 SessionSchema.index({ user: 1, block: 1, day: 1 });
+SessionSchema.index({ user: 1, date: -1 });              // Date-sorted queries
+SessionSchema.index({ user: 1, 'exercises.name': 1 });    // Exercise history lookup
 
 module.exports = mongoose.model('Session', SessionSchema);

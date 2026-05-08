@@ -4,6 +4,8 @@ import 'api_service.dart';
 
 class OfflineQueue {
   static const _key = 'sbd_offline_queue';
+  static const int _maxRetries = 3;
+  static const int _maxQueueSize = 50;
 
   static Future<List<Map<String, dynamic>>> getQueue() async {
     final prefs = await SharedPreferences.getInstance();
@@ -19,9 +21,14 @@ class OfflineQueue {
 
   static Future<void> enqueue(Map<String, dynamic> action) async {
     final queue = await getQueue();
+    // Enforce max queue size
+    if (queue.length >= _maxQueueSize) {
+      queue.removeAt(0); // Drop oldest
+    }
     queue.add({
       ...action,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'retries': 0,
     });
     await _saveQueue(queue);
   }
@@ -37,6 +44,21 @@ class OfflineQueue {
     final remaining = <Map<String, dynamic>>[];
 
     for (final item in queue) {
+      final retries = (item['retries'] as int?) ?? 0;
+
+      // Skip items that have exceeded max retries
+      if (retries >= _maxRetries) continue;
+
+      // Prevent rapid retry loops — wait at least 30s between attempts
+      final lastAttempt = item['lastAttempt'] as int?;
+      if (lastAttempt != null) {
+        final elapsed = DateTime.now().millisecondsSinceEpoch - lastAttempt;
+        if (elapsed < 30000) {
+          remaining.add(item);
+          continue;
+        }
+      }
+
       try {
         switch (item['type']) {
           case 'create':
@@ -50,8 +72,12 @@ class OfflineQueue {
             break;
         }
       } catch (e) {
-        // Keep failed items for retry
-        remaining.add(item);
+        // Keep failed items for retry with incremented count
+        remaining.add({
+          ...item,
+          'retries': retries + 1,
+          'lastAttempt': DateTime.now().millisecondsSinceEpoch,
+        });
       }
     }
 

@@ -87,7 +87,27 @@ enum TimeRange {
 class AnalyticsProcessor {
   final List<dynamic> sessions;
 
+  // ─── Memoization caches ───
+  final Map<String, List<dynamic>> _filterCache = {};
+  final Map<String, List<StrengthPoint>> _strengthCache = {};
+  final Map<String, List<VolumePoint>> _volumeCache = {};
+  final Map<String, LiftMetrics> _metricsCache = {};
+  final Map<String, List<LiftProgress>> _progressCache = {};
+  final Map<String, List<Insight>> _insightsCache = {};
+  final Map<String, List<Map<String, dynamic>>> _variationsCache = {};
+
   AnalyticsProcessor(this.sessions);
+
+  /// Clear all caches (call when session data changes).
+  void clearCache() {
+    _filterCache.clear();
+    _strengthCache.clear();
+    _volumeCache.clear();
+    _metricsCache.clear();
+    _progressCache.clear();
+    _insightsCache.clear();
+    _variationsCache.clear();
+  }
 
   /// Epley formula: e1RM = weight × (1 + reps/30)
   static double estimateE1RM(double weight, int reps) {
@@ -96,9 +116,11 @@ class AnalyticsProcessor {
     return weight * (1 + reps / 30.0);
   }
 
-  /// Filter sessions by time range.
+  /// Filter sessions by time range (cached).
   List<dynamic> _filterByRange(TimeRange range) {
-    // If range is This Month, just filter from 1st of month.
+    final key = range.name;
+    if (_filterCache.containsKey(key)) return _filterCache[key]!;
+
     DateTime cutoff;
     final now = DateTime.now();
     if (range == TimeRange.thisMonth) {
@@ -109,7 +131,7 @@ class AnalyticsProcessor {
       cutoff = now.subtract(Duration(days: range.days));
     }
     
-    return sessions.where((s) {
+    final result = sessions.where((s) {
       final d = DateTime.tryParse(s['date']?.toString() ?? '');
       return d != null && d.isAfter(cutoff);
     }).toList()
@@ -118,6 +140,9 @@ class AnalyticsProcessor {
         final db = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(2000);
         return da.compareTo(db);
       });
+
+    _filterCache[key] = result;
+    return result;
   }
 
   /// Check if an exercise name matches a lift category.
@@ -135,8 +160,11 @@ class AnalyticsProcessor {
     }
   }
 
-  /// Get strength trend points for a specific lift.
+  /// Get strength trend points for a specific lift (cached).
   List<StrengthPoint> getStrengthTrend(String lift, TimeRange range) {
+    final key = '$lift-${range.name}';
+    if (_strengthCache.containsKey(key)) return _strengthCache[key]!;
+
     final filtered = _filterByRange(range);
     final points = <StrengthPoint>[];
 
@@ -163,15 +191,21 @@ class AnalyticsProcessor {
       }
     }
 
+    _strengthCache[key] = points;
     return points;
   }
 
-  /// Get weekly volume trend for a specific lift or all.
+  /// Get weekly volume trend (cached).
   List<VolumePoint> getVolumeTrend(TimeRange range, {String? lift}) {
-    final filtered = _filterByRange(range);
-    if (filtered.isEmpty) return [];
+    final key = '${lift ?? 'all'}-${range.name}';
+    if (_volumeCache.containsKey(key)) return _volumeCache[key]!;
 
-    // Group by ISO week
+    final filtered = _filterByRange(range);
+    if (filtered.isEmpty) {
+      _volumeCache[key] = [];
+      return [];
+    }
+
     final Map<String, double> weekVolumes = {};
     final Map<String, DateTime> weekStarts = {};
 
@@ -179,11 +213,10 @@ class AnalyticsProcessor {
       final date = DateTime.tryParse(session['date']?.toString() ?? '');
       if (date == null) continue;
 
-      // Get Monday of that week
       final monday = date.subtract(Duration(days: date.weekday - 1));
-      final key = '${monday.year}-${monday.month.toString().padLeft(2, '0')}-${monday.day.toString().padLeft(2, '0')}';
-      weekStarts.putIfAbsent(key, () => monday);
-      weekVolumes.putIfAbsent(key, () => 0);
+      final wk = '${monday.year}-${monday.month.toString().padLeft(2, '0')}-${monday.day.toString().padLeft(2, '0')}';
+      weekStarts.putIfAbsent(wk, () => monday);
+      weekVolumes.putIfAbsent(wk, () => 0);
 
       for (final ex in (session['exercises'] as List? ?? [])) {
         final name = (ex['name']?.toString() ?? '').toLowerCase();
@@ -202,25 +235,31 @@ class AnalyticsProcessor {
             final w = (set['weight'] as num?)?.toDouble() ?? 0;
             final r = (set['reps'] as num?)?.toInt() ?? 0;
             final c = (set['sets'] as num?)?.toInt() ?? 1;
-            weekVolumes[key] = weekVolumes[key]! + (w * r * c);
+            weekVolumes[wk] = weekVolumes[wk]! + (w * r * c);
           }
         }
       }
     }
 
     final sortedKeys = weekVolumes.keys.toList()..sort();
-    return sortedKeys.map((key) {
-      final ws = weekStarts[key]!;
+    final result = sortedKeys.map((wk) {
+      final ws = weekStarts[wk]!;
       return VolumePoint(
         weekStart: ws,
-        volume: weekVolumes[key]!,
+        volume: weekVolumes[wk]!,
         label: '${ws.month}/${ws.day}',
       );
     }).toList();
+
+    _volumeCache[key] = result;
+    return result;
   }
 
-  /// Top variations for a lift
+  /// Top variations for a lift (cached).
   List<Map<String, dynamic>> getTopVariations(String lift, TimeRange range) {
+    final key = '$lift-${range.name}';
+    if (_variationsCache.containsKey(key)) return _variationsCache[key]!;
+
     final filtered = _filterByRange(range);
     final Map<String, double> topWeights = {};
 
@@ -243,19 +282,23 @@ class AnalyticsProcessor {
 
     final list = topWeights.entries.map((e) => {'name': e.key, 'weight': e.value}).toList();
     list.sort((a, b) => (b['weight'] as double).compareTo(a['weight'] as double));
+
+    _variationsCache[key] = list;
     return list;
   }
 
+  /// Lift metrics (cached).
   LiftMetrics getLiftMetrics(String lift, TimeRange range) {
+    final key = '$lift-${range.name}';
+    if (_metricsCache.containsKey(key)) return _metricsCache[key]!;
+
     final filtered = _filterByRange(range);
     
     double currentMax = 0;
     double est1RM = 0;
     double prevEst1RM = 0;
-    
     double volume7d = 0;
     double prevVolume7d = 0;
-    
     int totalSets = 0;
     int prevTotalSets = 0;
 
@@ -296,7 +339,7 @@ class AnalyticsProcessor {
     
     if (est1RM == 0 && prevEst1RM > 0) est1RM = prevEst1RM;
 
-    return LiftMetrics(
+    final result = LiftMetrics(
       currentMax: currentMax,
       est1RM: est1RM,
       volume7d: volume7d,
@@ -305,9 +348,16 @@ class AnalyticsProcessor {
       prevTotalSets: prevTotalSets,
       prevEst1RM: prevEst1RM,
     );
+
+    _metricsCache[key] = result;
+    return result;
   }
 
+  /// Weekly progress (cached).
   List<LiftProgress> getWeeklyProgress(TimeRange range) {
+    final key = range.name;
+    if (_progressCache.containsKey(key)) return _progressCache[key]!;
+
     final lifts = ['Squat', 'Bench', 'Deadlift'];
     final progress = <LiftProgress>[];
 
@@ -359,10 +409,16 @@ class AnalyticsProcessor {
         trend: trend,
       ));
     }
+
+    _progressCache[key] = progress;
     return progress;
   }
 
+  /// Insights (cached).
   List<Insight> getInsights(TimeRange range, {String? lift}) {
+    final key = '${lift ?? 'all'}-${range.name}';
+    if (_insightsCache.containsKey(key)) return _insightsCache[key]!;
+
     final insights = <Insight>[];
     final targetLifts = lift != null ? [lift] : ['Squat', 'Bench', 'Deadlift'];
     final progress = getWeeklyProgress(range).where((p) => targetLifts.contains(p.lift)).toList();
@@ -424,6 +480,8 @@ class AnalyticsProcessor {
       ));
     }
 
-    return insights.take(3).toList();
+    final result = insights.take(3).toList();
+    _insightsCache[key] = result;
+    return result;
   }
 }

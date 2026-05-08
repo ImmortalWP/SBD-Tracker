@@ -3,23 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
-
-// Dark Blue Theme Constants
-const Color _bg = Color(0xFF090D14);
-const Color _cardBg = Color(0xFF151923);
-const Color _inputBg = Color(0xFF11141D);
-const Color _borderColor = Color(0xFF222836);
-const Color _textPrimary = Colors.white;
-const Color _textSecondary = Color(0xFF94A3B8);
-const Color _textMuted = Color(0xFF475569);
-const Color _accentBlue = Color(0xFF2563EB);
-const Color _accentBlueLight = Color(0xFF3B82F6);
-const Color _accentBlueBg = Color(0xFF172554);
-const Color _accentGreen = Color(0xFF22C55E);
-
-// Extra colors for stats
-const Color _statYellow = Color(0xFFEAB308);
-const Color _statPurple = Color(0xFFA855F7);
+import '../services/session_utils.dart';
+import '../theme/app_colors.dart';
 
 class SessionsScreen extends StatefulWidget {
   final List<dynamic> sessions;
@@ -69,13 +54,13 @@ class _SessionsScreenState extends State<SessionsScreen> {
             Expanded(
               child: RefreshIndicator(
                 onRefresh: widget.onRefresh,
-                color: _accentBlue,
-                backgroundColor: _cardBg,
+                color: AppColors.accentBlue,
+                backgroundColor: AppColors.cardBg,
                 child: filtered.isEmpty
                   ? ListView(
                       padding: const EdgeInsets.only(top: 40),
                       children: const [
-                        Center(child: Text('No sessions found', style: TextStyle(color: _textMuted, fontSize: 14))),
+                        Center(child: Text('No sessions found', style: TextStyle(color: AppColors.textMuted, fontSize: 14))),
                       ],
                     )
                   : ListView.builder(
@@ -110,27 +95,27 @@ class _SessionsScreenState extends State<SessionsScreen> {
             children: [
               const Text(
                 'Training Log',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: _textPrimary, letterSpacing: 0.3),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.textPrimary, letterSpacing: 0.3),
               ),
               const SizedBox(height: 4),
               Text(
                 '$count sessions found',
-                style: const TextStyle(fontSize: 14, color: _textSecondary),
+                style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
               ),
             ],
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: _cardBg,
+              color: AppColors.cardBg,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _borderColor),
+              border: Border.all(color: AppColors.borderColor),
             ),
             child: Row(
               children: [
-                const Icon(Icons.person_outline, size: 16, color: _textSecondary),
+                const Icon(Icons.person_outline, size: 16, color: AppColors.textSecondary),
                 const SizedBox(width: 8),
-                Text(username, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _textSecondary)),
+                Text(username, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
               ],
             ),
           ),
@@ -142,7 +127,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   void _showFilterSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: _cardBg,
+      backgroundColor: AppColors.cardBg,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => StatefulBuilder(
@@ -156,7 +141,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Filters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: _textPrimary)),
+                    const Text('Filters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                     TextButton(
                       onPressed: () {
                         setModalState(() {
@@ -170,18 +155,18 @@ class _SessionsScreenState extends State<SessionsScreen> {
                           _selectedDay = null;
                         });
                       },
-                      child: const Text('Clear', style: TextStyle(color: _textMuted)),
+                      child: const Text('Clear', style: TextStyle(color: AppColors.textMuted)),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                const Text('Day', style: TextStyle(color: _textSecondary, fontSize: 12)),
+                const Text('Day', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _selectedDay,
-                  decoration: const InputDecoration(filled: true, fillColor: _inputBg, border: OutlineInputBorder()),
-                  dropdownColor: _cardBg,
-                  style: const TextStyle(color: _textPrimary),
+                  decoration: const InputDecoration(filled: true, fillColor: AppColors.inputBg, border: OutlineInputBorder()),
+                  dropdownColor: AppColors.cardBg,
+                  style: const TextStyle(color: AppColors.textPrimary),
                   items: [
                     const DropdownMenuItem(value: null, child: Text('All Days')),
                     ...['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((d) => DropdownMenuItem(value: d, child: Text(d))),
@@ -195,7 +180,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: _accentBlue),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentBlue),
                     onPressed: () => Navigator.pop(ctx),
                     child: const Text('Apply', style: TextStyle(color: Colors.white)),
                   ),
@@ -239,11 +224,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
             // Block dropdown
             PopupMenuButton<int?>(
               onSelected: (val) => setState(() => _selectedBlock = val),
-              color: _cardBg,
+              color: AppColors.cardBg,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               itemBuilder: (_) => [
-                PopupMenuItem<int?>(value: null, child: Text('All Blocks', style: TextStyle(color: _selectedBlock == null ? _accentBlueLight : _textPrimary))),
-                ..._availableBlocks.map((b) => PopupMenuItem<int?>(value: b, child: Text('Block $b', style: TextStyle(color: _selectedBlock == b ? _accentBlueLight : _textPrimary)))),
+                PopupMenuItem<int?>(value: null, child: Text('All Blocks', style: TextStyle(color: _selectedBlock == null ? AppColors.accentBlueLight : AppColors.textPrimary))),
+                ..._availableBlocks.map((b) => PopupMenuItem<int?>(value: b, child: Text('Block $b', style: TextStyle(color: _selectedBlock == b ? AppColors.accentBlueLight : AppColors.textPrimary)))),
               ],
               child: _buildFilterBtn(Icons.grid_view, _selectedBlock != null ? 'Block $_selectedBlock' : 'All Blocks', true, _selectedBlock != null),
             ),
@@ -251,11 +236,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
             // Week dropdown
             PopupMenuButton<int?>(
               onSelected: (val) => setState(() => _selectedWeek = val),
-              color: _cardBg,
+              color: AppColors.cardBg,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               itemBuilder: (_) => [
-                PopupMenuItem<int?>(value: null, child: Text('All Weeks', style: TextStyle(color: _selectedWeek == null ? _accentBlueLight : _textPrimary))),
-                ..._availableWeeks.map((w) => PopupMenuItem<int?>(value: w, child: Text('Week $w', style: TextStyle(color: _selectedWeek == w ? _accentBlueLight : _textPrimary)))),
+                PopupMenuItem<int?>(value: null, child: Text('All Weeks', style: TextStyle(color: _selectedWeek == null ? AppColors.accentBlueLight : AppColors.textPrimary))),
+                ..._availableWeeks.map((w) => PopupMenuItem<int?>(value: w, child: Text('Week $w', style: TextStyle(color: _selectedWeek == w ? AppColors.accentBlueLight : AppColors.textPrimary)))),
               ],
               child: _buildFilterBtn(Icons.calendar_month, _selectedWeek != null ? 'Week $_selectedWeek' : 'All Weeks', true, _selectedWeek != null),
             ),
@@ -274,18 +259,18 @@ class _SessionsScreenState extends State<SessionsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: isActive ? _accentBlueBg : _cardBg,
+        color: isActive ? AppColors.accentBlueBg : AppColors.cardBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isActive ? _accentBlue : _borderColor),
+        border: Border.all(color: isActive ? AppColors.accentBlue : AppColors.borderColor),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: isActive ? _accentBlueLight : _textSecondary),
+          Icon(icon, size: 16, color: isActive ? AppColors.accentBlueLight : AppColors.textSecondary),
           const SizedBox(width: 8),
-          Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isActive ? _accentBlueLight : _textPrimary)),
+          Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isActive ? AppColors.accentBlueLight : AppColors.textPrimary)),
           if (hasDropdown) ...[
             const SizedBox(width: 8),
-            Icon(Icons.keyboard_arrow_down, size: 16, color: isActive ? _accentBlueLight : _textSecondary),
+            Icon(Icons.keyboard_arrow_down, size: 16, color: isActive ? AppColors.accentBlueLight : AppColors.textSecondary),
           ]
         ],
       ),
@@ -294,61 +279,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
 
   // --- Calculations for Session Summary ---
 
-  double _getSessionVolume(Map<String, dynamic> session) {
-    double vol = 0;
-    final exercises = session['exercises'] as List? ?? [];
-    for (var ex in exercises) {
-      for (var set in (ex['sets'] as List? ?? [])) {
-        final w = double.tryParse(set['weight']?.toString() ?? '0') ?? 0;
-        final r = int.tryParse(set['reps']?.toString() ?? '0') ?? 0;
-        final c = int.tryParse(set['sets']?.toString() ?? '1') ?? 1;
-        vol += w * r * c;
-      }
-    }
-    return vol;
-  }
+  double _getSessionVolume(Map<String, dynamic> session) => SessionUtils.getSessionVolume(session);
 
-  int _getSessionSets(Map<String, dynamic> session) {
-    int total = 0;
-    final exercises = session['exercises'] as List? ?? [];
-    for (var ex in exercises) {
-      for (var set in (ex['sets'] as List? ?? [])) {
-        final c = int.tryParse(set['sets']?.toString() ?? '1') ?? 1;
-        total += c;
-      }
-    }
-    return total;
-  }
+  int _getSessionSets(Map<String, dynamic> session) => SessionUtils.getSessionSets(session);
 
-  String _getSessionDuration(Map<String, dynamic> session) {
-    // Try the new field first
-    final dMin = session['durationInMinutes'];
-    if (dMin != null) {
-      final m = int.tryParse(dMin.toString()) ?? 0;
-      if (m > 0) {
-        if (m >= 60) {
-          final h = m ~/ 60;
-          final rm = m % 60;
-          return rm > 0 ? '${h}h ${rm}m' : '${h}h';
-        }
-        return '$m min';
-      }
-    }
-    // Fallback to legacy 'duration' field
-    final dur = session['duration'];
-    if (dur != null) {
-      final m = int.tryParse(dur.toString()) ?? 0;
-      if (m > 0) {
-        if (m >= 60) {
-          final h = m ~/ 60;
-          final rm = m % 60;
-          return rm > 0 ? '${h}h ${rm}m' : '${h}h';
-        }
-        return '$m min';
-      }
-    }
-    return '— min';
-  }
+  String _getSessionDuration(Map<String, dynamic> session) => SessionUtils.getSessionDuration(session);
 
   // --- Main Card Builder ---
 
@@ -384,9 +319,9 @@ class _SessionsScreenState extends State<SessionsScreen> {
         margin: const EdgeInsets.only(bottom: 12),
         padding: isExpanded ? const EdgeInsets.all(16) : const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
-          color: _cardBg,
+          color: AppColors.cardBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _borderColor),
+          border: Border.all(color: AppColors.borderColor),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -395,25 +330,25 @@ class _SessionsScreenState extends State<SessionsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textPrimary)),
+                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                 if (!isExpanded)
                   Row(
                     children: [
                       Text(
                         '${vol.toStringAsFixed(0)} kg • $sets sets • $dur',
-                        style: const TextStyle(fontSize: 12, color: _textSecondary),
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                       ),
                       const SizedBox(width: 12),
-                      const Icon(Icons.keyboard_arrow_down, color: _textSecondary, size: 20),
+                      const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary, size: 20),
                     ],
                   )
                 else
-                  const Icon(Icons.keyboard_arrow_up, color: _textPrimary, size: 20),
+                  const Icon(Icons.keyboard_arrow_up, color: AppColors.textPrimary, size: 20),
               ],
             ),
             if (isExpanded) ...[
               const SizedBox(height: 16),
-              Container(height: 1, color: _borderColor),
+              Container(height: 1, color: AppColors.borderColor),
               const SizedBox(height: 16),
               _buildExpandedSummaryRow(exercises.length, vol, sets, dur),
               const SizedBox(height: 24),
@@ -431,13 +366,13 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: _inputBg, borderRadius: BorderRadius.circular(8)),
+                    decoration: BoxDecoration(color: AppColors.inputBg, borderRadius: BorderRadius.circular(8)),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Notes', style: TextStyle(fontSize: 12, color: _textMuted, fontWeight: FontWeight.w600)),
+                        const Text('Notes', style: TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 4),
-                        Text(noteText, style: const TextStyle(fontSize: 14, color: _textSecondary)),
+                        Text(noteText, style: const TextStyle(fontSize: 14, color: AppColors.textSecondary)),
                       ],
                     ),
                   ),
@@ -454,10 +389,10 @@ class _SessionsScreenState extends State<SessionsScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _buildSummaryStat(Icons.fitness_center, _accentBlueLight, '$exCount', 'Exercises'),
-        _buildSummaryStat(Icons.signal_cellular_alt, _accentGreen, '${vol.toStringAsFixed(0)} kg', 'Volume'),
-        _buildSummaryStat(Icons.trending_up, _statYellow, '$sets', 'Total Sets'),
-        _buildSummaryStat(Icons.access_time, _statPurple, dur, 'Duration'),
+        _buildSummaryStat(Icons.fitness_center, AppColors.accentBlueLight, '$exCount', 'Exercises'),
+        _buildSummaryStat(Icons.signal_cellular_alt, AppColors.accentGreen, '${vol.toStringAsFixed(0)} kg', 'Volume'),
+        _buildSummaryStat(Icons.trending_up, AppColors.statYellow, '$sets', 'Total Sets'),
+        _buildSummaryStat(Icons.access_time, AppColors.statPurple, dur, 'Duration'),
       ],
     );
   }
@@ -470,8 +405,8 @@ class _SessionsScreenState extends State<SessionsScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _textPrimary)),
-            Text(label, style: const TextStyle(fontSize: 10, color: _textSecondary)),
+            Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
           ],
         ),
       ],
@@ -516,15 +451,15 @@ class _ExerciseHistoryTileState extends State<_ExerciseHistoryTile> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: _inputBg,
+        color: AppColors.inputBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Container(
           decoration: const BoxDecoration(
-            border: Border(left: BorderSide(color: _accentBlueLight, width: 3)),
+            border: Border(left: BorderSide(color: AppColors.accentBlueLight, width: 3)),
           ),
           child: InkWell(
             onTap: () {
@@ -542,33 +477,33 @@ class _ExerciseHistoryTileState extends State<_ExerciseHistoryTile> {
                     children: [
                       Row(
                         children: [
-                          Text(name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _accentBlueLight)),
+                          Text(name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.accentBlueLight)),
                           if (pct != null && pct.isNotEmpty) ...[
                             const SizedBox(width: 8),
-                            Text('— $pct%', style: const TextStyle(fontSize: 14, color: _textSecondary)),
+                            Text('— $pct%', style: const TextStyle(fontSize: 14, color: AppColors.textSecondary)),
                           ],
                         ],
                       ),
-                      Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 20, color: _textMuted),
+                      Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 20, color: AppColors.textMuted),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Text('Top: ', style: TextStyle(fontSize: 13, color: _textMuted)),
-                      Text(topSetStr, style: const TextStyle(fontSize: 13, color: _textPrimary, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                      const Text('Top: ', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                      Text(topSetStr, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
                       const SizedBox(width: 16),
-                      const Text('Sets: ', style: TextStyle(fontSize: 13, color: _textMuted)),
-                      Text('$totalSets', style: const TextStyle(fontSize: 13, color: _textPrimary, fontWeight: FontWeight.w600)),
+                      const Text('Sets: ', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                      Text('$totalSets', style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
                     ],
                   ),
                   if (_expanded) ...[
                     const SizedBox(height: 16),
                     const Row(
                       children: [
-                        Expanded(flex: 1, child: Text('SET', style: TextStyle(fontSize: 10, color: _textMuted, fontWeight: FontWeight.w600, letterSpacing: 0.5))),
-                        Expanded(flex: 2, child: Center(child: Text('WEIGHT', style: TextStyle(fontSize: 10, color: _textMuted, fontWeight: FontWeight.w600, letterSpacing: 0.5)))),
-                        Expanded(flex: 2, child: Center(child: Text('REPS', style: TextStyle(fontSize: 10, color: _textMuted, fontWeight: FontWeight.w600, letterSpacing: 0.5)))),
+                        Expanded(flex: 1, child: Text('SET', style: TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600, letterSpacing: 0.5))),
+                        Expanded(flex: 2, child: Center(child: Text('WEIGHT', style: TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600, letterSpacing: 0.5)))),
+                        Expanded(flex: 2, child: Center(child: Text('REPS', style: TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600, letterSpacing: 0.5)))),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -598,9 +533,9 @@ class _ExerciseHistoryTileState extends State<_ExerciseHistoryTile> {
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               children: [
-                Expanded(flex: 1, child: Text('$setIndex', style: const TextStyle(fontSize: 13, color: _textSecondary, fontWeight: FontWeight.w500))),
-                Expanded(flex: 2, child: Center(child: Text(w, style: const TextStyle(fontSize: 13, color: _textPrimary, fontFamily: 'monospace')))),
-                Expanded(flex: 2, child: Center(child: Text(r, style: const TextStyle(fontSize: 13, color: _textPrimary, fontFamily: 'monospace')))),
+                Expanded(flex: 1, child: Text('$setIndex', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+                Expanded(flex: 2, child: Center(child: Text(w, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, fontFamily: 'monospace')))),
+                Expanded(flex: 2, child: Center(child: Text(r, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, fontFamily: 'monospace')))),
               ],
             ),
           )
