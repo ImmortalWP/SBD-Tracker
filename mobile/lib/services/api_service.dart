@@ -148,6 +148,16 @@ class ApiService {
     throw Exception('Failed to update profile');
   }
 
+  static Future<List<dynamic>> addPR(Map<String, dynamic> data) async {
+    final res = await _execute(() => http.post(
+      Uri.parse('$baseUrl/profile/prs'),
+      headers: _headersSync(),
+      body: jsonEncode(data),
+    ));
+    if (res.statusCode == 201) return jsonDecode(res.body);
+    throw Exception('Failed to save PR');
+  }
+
   // Synchronous headers helper — for use inside _execute callbacks
   // We cache _prefs so this is safe after first call
   static Map<String, String> _headersSync() {

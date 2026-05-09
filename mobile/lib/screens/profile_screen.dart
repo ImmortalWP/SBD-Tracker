@@ -209,60 +209,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _exportData() async {
-    try {
-      final sessions = await ApiService.getSessions();
-      final prs = await ApiService.getPRs();
-      final export = jsonEncode({'prs': prs, 'sessions': sessions, 'exportedAt': DateTime.now().toIso8601String()});
-
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: AppTheme.bg900,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            title: const Text('Export Data', style: TextStyle(color: AppTheme.text50, fontWeight: FontWeight.w700)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('${sessions.length} sessions, ${prs.length} PRs', style: const TextStyle(color: AppTheme.text400, fontSize: 13)),
-                const SizedBox(height: 12),
-                Container(
-                  height: 120,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.bg950,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      export,
-                      style: const TextStyle(fontSize: 10, color: AppTheme.text500, fontFamily: 'monospace'),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Close', style: TextStyle(color: AppTheme.text500)),
-              ),
-            ],
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Export failed: $e'),
-          backgroundColor: AppTheme.accentRed,
-        ));
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final auth = context.read<AuthService>();
@@ -450,6 +396,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ═══════════════════════════════════════════════════════════════
   //  TRAINING SETTINGS
   // ═══════════════════════════════════════════════════════════════
+
+
 
   Widget _buildTrainingSettings() {
     return Column(
@@ -680,7 +628,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _sectionLabel('APP'),
         const SizedBox(height: 14),
 
-        _actionRow(Icons.download_outlined, 'Export Data', AppTheme.text400, onTap: _exportData),
         _actionRow(Icons.refresh, 'Reset Local Data', AppTheme.accentAmber, onTap: _resetData),
 
         const SizedBox(height: 8),

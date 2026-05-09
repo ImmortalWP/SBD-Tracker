@@ -28,6 +28,15 @@ const UserSchema = new mongoose.Schema(
         date: { type: Date, default: Date.now },
       },
     ],
+    prHistory: [
+      {
+        exercise: { type: String, required: true },
+        weight: { type: Number, required: true },
+        reps: { type: Number, required: true },
+        estimated1RM: { type: Number },
+        date: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );

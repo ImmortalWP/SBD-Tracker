@@ -6,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/offline_queue.dart';
 import '../services/draft_service.dart';
+import '../services/analytics_processor.dart';
 import '../theme/app_colors.dart';
+import '../widgets/pr_celebration_modal.dart';
 import 'package:intl/intl.dart';
 
 class AddSessionScreen extends StatefulWidget {
@@ -184,16 +186,95 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     }
   }
 
+  List<Map<String, dynamic>> _detectPRs(List<dynamic> newExercises) {
+    List<Map<String, dynamic>> prs = [];
+    
+    for (var ex in newExercises) {
+      final name = ex['name'] as String;
+      final pastSets = _exerciseHistoryIndex[name.toLowerCase()] ?? [];
+      
+      // If there are no past sets, it's their first time doing the lift. We won't spam a PR for the first time.
+      if (pastSets.isEmpty) continue;
+      
+      double overallMaxWeight = 0;
+      double overallMaxE1RM = 0;
+      Map<double, int> maxRepsAtWeight = {};
+      
+      for (var session in pastSets) {
+        final weight = double.tryParse(session['weight']?.toString() ?? '0') ?? 0.0;
+        final reps = int.tryParse(session['reps']?.toString() ?? '0') ?? 0;
+        final e1rm = AnalyticsProcessor.estimateE1RM(weight, reps);
+        
+        if (weight > overallMaxWeight) overallMaxWeight = weight;
+        if (e1rm > overallMaxE1RM) overallMaxE1RM = e1rm;
+        if ((maxRepsAtWeight[weight] ?? 0) < reps) maxRepsAtWeight[weight] = reps;
+      }
+      
+      double bestNewWeight = 0;
+      int bestNewReps = 0;
+      double bestNewE1RM = 0;
+      bool isPR = false;
+      
+      for (var set in (ex['sets'] as List? ?? [])) {
+        final weight = double.tryParse(set['weight']?.toString() ?? '0') ?? 0.0;
+        final reps = int.tryParse(set['reps']?.toString() ?? '0') ?? 0;
+        final e1rm = AnalyticsProcessor.estimateE1RM(weight, reps);
+        
+        bool localPR = false;
+        if (weight > overallMaxWeight) {
+          localPR = true;
+        } else if (e1rm > overallMaxE1RM) {
+          localPR = true;
+        } else if (reps > (maxRepsAtWeight[weight] ?? 0)) {
+          localPR = true; // Rep PR for this specific weight!
+        }
+        
+        if (localPR) {
+          isPR = true;
+          // Keep the "best" PR of the session (highest e1rm)
+          if (e1rm > bestNewE1RM) {
+            bestNewE1RM = e1rm;
+            bestNewWeight = weight;
+            bestNewReps = reps;
+          }
+        }
+      }
+      
+      if (isPR) {
+        prs.add({
+          'exercise': name,
+          'weight': bestNewWeight,
+          'reps': bestNewReps,
+          'estimated1RM': bestNewE1RM,
+        });
+      }
+    }
+    
+    return prs;
+  }
+
   void _loadExisting() {
     final s = widget.existingSession!;
     _blockCtrl.text = s['block'].toString();
     if (s['week'] != null) _weekCtrl.text = s['week'].toString();
-    _day = s['day'] ?? 'Monday';
-    if (s['date'] != null) _date = s['date'].toString().substring(0, 10);
-    _notesCtrl.text = s['notes'] ?? '';
-    for (final ex in (s['exercises'] as List)) {
-      _exercises.add(_ExData.fromMap(ex));
+    _day = s['day'] ?? 'Mon';
+    if (s['date'] != null) {
+      final dt = DateTime.tryParse(s['date'].toString());
+      if (dt != null) _date = DateFormat('yyyy-MM-dd').format(dt);
     }
+    _notesCtrl.text = s['note'] ?? s['notes'] ?? '';
+    
+    final exList = s['exercises'] as List? ?? [];
+    for (final ex in exList) {
+      _exercises.add(_ExData.fromMap(ex as Map<String, dynamic>));
+    }
+  }
+
+  void _addExercise() {
+    setState(() {
+      _exercises.add(_ExData.empty('SBD'));
+      _isDirty = true;
+    });
   }
 
   Future<void> _tryLoadDraft() async {
@@ -422,6 +503,19 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
         await ApiService.updateSession(widget.existingSession!['_id'], payload);
       } else {
         await ApiService.createSession(payload);
+        
+        // PR Detection (Weight, e1RM, Reps)
+        try {
+          final prs = _detectPRs(exercises);
+          for (final pr in prs) {
+            await ApiService.addPR(pr);
+            if (mounted) {
+              PRCelebrationModal.show(context, exercise: pr['exercise'], weight: pr['weight'], reps: pr['reps']);
+              // Small delay if there are multiple PRs
+              await Future.delayed(const Duration(seconds: 3));
+            }
+          }
+        } catch (_) {} // fail silently for PR detection
       }
       _isDiscarding = true;
       await DraftService.clearDraft();
