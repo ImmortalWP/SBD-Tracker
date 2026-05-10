@@ -67,31 +67,6 @@ router.put('/', auth, async (req, res) => {
   }
 });
 
-// POST add PR to history
-router.post('/prs', auth, async (req, res) => {
-  try {
-    const { exercise, weight, reps, estimated1RM } = req.body;
-    if (!exercise || weight === undefined || reps === undefined) {
-      return res.status(400).json({ error: 'Missing required PR fields' });
-    }
 
-    const user = await User.findById(req.userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    user.prHistory = user.prHistory || [];
-    user.prHistory.push({
-      exercise,
-      weight,
-      reps,
-      estimated1RM,
-      date: new Date(),
-    });
-
-    await user.save();
-    res.status(201).json(user.prHistory);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 module.exports = router;

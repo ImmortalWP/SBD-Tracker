@@ -186,73 +186,6 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     }
   }
 
-  List<Map<String, dynamic>> _detectPRs(List<dynamic> newExercises) {
-    List<Map<String, dynamic>> prs = [];
-    
-    for (var ex in newExercises) {
-      final name = ex['name'] as String;
-      final pastSets = _exerciseHistoryIndex[name.toLowerCase()] ?? [];
-      
-      // If there are no past sets, it's their first time doing the lift. We won't spam a PR for the first time.
-      if (pastSets.isEmpty) continue;
-      
-      double overallMaxWeight = 0;
-      double overallMaxE1RM = 0;
-      Map<double, int> maxRepsAtWeight = {};
-      
-      for (var session in pastSets) {
-        final weight = double.tryParse(session['weight']?.toString() ?? '0') ?? 0.0;
-        final reps = int.tryParse(session['reps']?.toString() ?? '0') ?? 0;
-        final e1rm = AnalyticsProcessor.estimateE1RM(weight, reps);
-        
-        if (weight > overallMaxWeight) overallMaxWeight = weight;
-        if (e1rm > overallMaxE1RM) overallMaxE1RM = e1rm;
-        if ((maxRepsAtWeight[weight] ?? 0) < reps) maxRepsAtWeight[weight] = reps;
-      }
-      
-      double bestNewWeight = 0;
-      int bestNewReps = 0;
-      double bestNewE1RM = 0;
-      bool isPR = false;
-      
-      for (var set in (ex['sets'] as List? ?? [])) {
-        final weight = double.tryParse(set['weight']?.toString() ?? '0') ?? 0.0;
-        final reps = int.tryParse(set['reps']?.toString() ?? '0') ?? 0;
-        final e1rm = AnalyticsProcessor.estimateE1RM(weight, reps);
-        
-        bool localPR = false;
-        if (weight > overallMaxWeight) {
-          localPR = true;
-        } else if (e1rm > overallMaxE1RM) {
-          localPR = true;
-        } else if (reps > (maxRepsAtWeight[weight] ?? 0)) {
-          localPR = true; // Rep PR for this specific weight!
-        }
-        
-        if (localPR) {
-          isPR = true;
-          // Keep the "best" PR of the session (highest e1rm)
-          if (e1rm > bestNewE1RM) {
-            bestNewE1RM = e1rm;
-            bestNewWeight = weight;
-            bestNewReps = reps;
-          }
-        }
-      }
-      
-      if (isPR) {
-        prs.add({
-          'exercise': name,
-          'weight': bestNewWeight,
-          'reps': bestNewReps,
-          'estimated1RM': bestNewE1RM,
-        });
-      }
-    }
-    
-    return prs;
-  }
-
   void _loadExisting() {
     final s = widget.existingSession!;
     _blockCtrl.text = s['block'].toString();
@@ -439,6 +372,8 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   }
 
   Future<void> _submit() async {
+    if (_loading) return; // Prevent duplicate submissions
+
     if (_blockCtrl.text.isEmpty) {
       setState(() => _error = 'Block number is required.');
       return;
@@ -503,19 +438,6 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
         await ApiService.updateSession(widget.existingSession!['_id'], payload);
       } else {
         await ApiService.createSession(payload);
-        
-        // PR Detection (Weight, e1RM, Reps)
-        try {
-          final prs = _detectPRs(exercises);
-          for (final pr in prs) {
-            await ApiService.addPR(pr);
-            if (mounted) {
-              PRCelebrationModal.show(context, exercise: pr['exercise'], weight: pr['weight'], reps: pr['reps']);
-              // Small delay if there are multiple PRs
-              await Future.delayed(const Duration(seconds: 3));
-            }
-          }
-        } catch (_) {} // fail silently for PR detection
       }
       _isDiscarding = true;
       await DraftService.clearDraft();
@@ -576,55 +498,21 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
         bottomNavigationBar: _buildBottomBar(),
         body: GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
-          child: SingleChildScrollView(
+          child: ReorderableListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
-            child: Column(
+            buildDefaultDragHandles: false,
+            header: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (_error.isNotEmpty) ...[
                   Text(_error, style: const TextStyle(color: Color(0xFFD95A5A), fontSize: 13)),
                   const SizedBox(height: 16),
                 ],
-
                 _buildTopMetadata(),
-
-                ReorderableListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  buildDefaultDragHandles: false,
-                  itemCount: _exercises.length,
-                  onReorder: (oldIndex, newIndex) {
-                    setState(() {
-                      if (newIndex > oldIndex) newIndex -= 1;
-                      final item = _exercises.removeAt(oldIndex);
-                      _exercises.insert(newIndex, item);
-                    });
-                  },
-                  itemBuilder: (context, index) {
-                    final ex = _exercises[index];
-                    return ReorderableDelayedDragStartListener(
-                      key: ValueKey(ex.id),
-                      index: index,
-                      child: _ExerciseCard(
-                        index: index,
-                        data: ex,
-                        mainLifts: _mainLifts,
-                        secondaryLifts: _secondaryLifts,
-                        accessoryLifts: _accessoryLifts,
-                        allAccessoryLifts: _allAccessoryLifts,
-                        allSecondaryLifts: _allSecondaryLifts,
-                        dynamicAccessories: _dynamicAccessories,
-                        canDelete: _exercises.length > 1,
-                        onDelete: () => setState(() {
-                          ex.dispose();
-                          _exercises.removeAt(index);
-                        }),
-                        onExerciseChanged: (name) => _loadExerciseHistory(ex, name),
-                      ),
-                    );
-                  },
-                ),
-
+              ],
+            ),
+            footer: Column(
+              children: [
                 Row(
                   children: [
                     Expanded(child: _addCardBtn('Main Lift', 'main', Icons.fitness_center)),
@@ -637,6 +525,37 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
                 const SizedBox(height: 32),
               ],
             ),
+            itemCount: _exercises.length,
+            onReorder: (oldIndex, newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final item = _exercises.removeAt(oldIndex);
+                _exercises.insert(newIndex, item);
+              });
+            },
+            itemBuilder: (context, index) {
+              final ex = _exercises[index];
+              return ReorderableDelayedDragStartListener(
+                key: ValueKey(ex.id),
+                index: index,
+                child: _ExerciseCard(
+                  index: index,
+                  data: ex,
+                  mainLifts: _mainLifts,
+                  secondaryLifts: _secondaryLifts,
+                  accessoryLifts: _accessoryLifts,
+                  allAccessoryLifts: _allAccessoryLifts,
+                  allSecondaryLifts: _allSecondaryLifts,
+                  dynamicAccessories: _dynamicAccessories,
+                  canDelete: _exercises.length > 1,
+                  onDelete: () => setState(() {
+                    ex.dispose();
+                    _exercises.removeAt(index);
+                  }),
+                  onExerciseChanged: (name) => _loadExerciseHistory(ex, name),
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -716,13 +635,10 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
                   children: [
                     const Icon(Icons.timer_outlined, color: AppColors.textSecondary, size: 24),
                     const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_timerRunning ? 'Workout Duration' : 'Paused', style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
-                        Text(_timerDisplay, style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-                      ],
+                    _IsolatedTimerDisplay(
+                      isRunning: _timerRunning,
+                      startTime: _timerStartTime,
+                      accumulatedSeconds: _accumulatedSeconds,
                     ),
                   ],
                 ),
@@ -1405,6 +1321,76 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           isDense: true,
         ),
       ),
+    );
+  }
+}
+
+class _IsolatedTimerDisplay extends StatefulWidget {
+  final bool isRunning;
+  final DateTime? startTime;
+  final int accumulatedSeconds;
+
+  const _IsolatedTimerDisplay({
+    Key? key,
+    required this.isRunning,
+    this.startTime,
+    required this.accumulatedSeconds,
+  }) : super(key: key);
+
+  @override
+  State<_IsolatedTimerDisplay> createState() => _IsolatedTimerDisplayState();
+}
+
+class _IsolatedTimerDisplayState extends State<_IsolatedTimerDisplay> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isRunning) _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(_IsolatedTimerDisplay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isRunning && !oldWidget.isRunning) {
+      _startTimer();
+    } else if (!widget.isRunning && oldWidget.isRunning) {
+      _timer?.cancel();
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  int get _currentSeconds {
+    if (!widget.isRunning || widget.startTime == null) return widget.accumulatedSeconds;
+    return widget.accumulatedSeconds + DateTime.now().difference(widget.startTime!).inSeconds;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = _currentSeconds;
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(widget.isRunning ? 'Workout Duration' : 'Paused', style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+        Text('$m:$s', style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+      ],
     );
   }
 }
