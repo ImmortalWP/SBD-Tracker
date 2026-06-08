@@ -21,6 +21,18 @@ class OfflineQueue {
 
   static Future<void> enqueue(Map<String, dynamic> action) async {
     final queue = await getQueue();
+
+    // Deduplicate: if a 'create' action with the same clientId is already queued, skip
+    if (action['type'] == 'create') {
+      final clientId = (action['data'] as Map<String, dynamic>?)?['clientId'];
+      if (clientId != null) {
+        final alreadyQueued = queue.any((item) =>
+          item['type'] == 'create' &&
+          (item['data'] as Map<String, dynamic>?)?['clientId'] == clientId);
+        if (alreadyQueued) return; // Already in queue, don't add duplicate
+      }
+    }
+
     // Enforce max queue size
     if (queue.length >= _maxQueueSize) {
       queue.removeAt(0); // Drop oldest

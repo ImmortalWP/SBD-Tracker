@@ -43,3 +43,27 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+
+# Android SDK
+.android-sdk/
+android-sdk/
+
+# JDK
+jdk/
+jdk17/
+
+# NDK
+ndk/
+
+# Android build files
+.gradle/
+build/
+app/build/
+
+# Android Studio
+.idea/
+*.iml
+
+# Local configuration
+local.properties

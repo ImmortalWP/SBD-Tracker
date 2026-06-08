@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import '../services/api_service.dart';
 import '../services/offline_queue.dart';
 import '../services/draft_service.dart';
@@ -420,7 +421,12 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       }
     }
 
+    // Generate a unique clientId for new sessions to prevent duplicates
+    // This key survives through retries and offline queue
+    final clientId = _isEditing ? null : const Uuid().v4();
+
     final payload = <String, dynamic>{
+      if (clientId != null) 'clientId': clientId,
       'block': int.tryParse(_blockCtrl.text) ?? 1,
       if (_weekCtrl.text.isNotEmpty) 'week': int.tryParse(_weekCtrl.text),
       'day': _day,

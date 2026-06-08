@@ -17,6 +17,7 @@ const ExerciseSchema = new mongoose.Schema({
 const SessionSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    clientId: { type: String, default: null },
     block: { type: Number, required: true },
     week: { type: Number },
     percentage: { type: Number },
@@ -38,5 +39,6 @@ const SessionSchema = new mongoose.Schema(
 SessionSchema.index({ user: 1, block: 1, day: 1 });
 SessionSchema.index({ user: 1, date: -1 });              // Date-sorted queries
 SessionSchema.index({ user: 1, 'exercises.name': 1 });    // Exercise history lookup
+SessionSchema.index({ user: 1, clientId: 1 }, { unique: true, sparse: true }); // Idempotency — prevent duplicate submissions
 
 module.exports = mongoose.model('Session', SessionSchema);

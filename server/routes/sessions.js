@@ -39,12 +39,33 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/sessions — create
+// POST /api/sessions — create (idempotent via clientId)
 router.post('/', async (req, res) => {
   try {
-    const session = await Session.create({ ...req.body, user: req.userId });
+    const { clientId, ...rest } = req.body;
+
+    // If clientId provided, check for duplicate first
+    if (clientId) {
+      const existing = await Session.findOne({ user: req.userId, clientId }).lean();
+      if (existing) {
+        return res.status(200).json(existing); // Idempotent — return existing
+      }
+    }
+
+    const session = await Session.create({
+      ...rest,
+      ...(clientId ? { clientId } : {}),
+      user: req.userId,
+    });
     res.status(201).json(session);
   } catch (err) {
+    // Handle race condition: concurrent duplicate clientId insert
+    if (err.code === 11000 && req.body.clientId) {
+      const existing = await Session.findOne({ user: req.userId, clientId: req.body.clientId }).lean();
+      if (existing) {
+        return res.status(200).json(existing);
+      }
+    }
     res.status(400).json({ error: err.message });
   }
 });
