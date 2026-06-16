@@ -559,6 +559,10 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
                     _exercises.removeAt(index);
                   }),
                   onExerciseChanged: (name) => _loadExerciseHistory(ex, name),
+                  onSetToggled: () {
+                    _isDirty = true;
+                    _saveDraft();
+                  },
                 ),
               );
             },
@@ -849,6 +853,7 @@ class _ExData {
           wCtrl: TextEditingController(text: (s['weight'] ?? '').toString()),
           sCtrl: TextEditingController(text: '1'),
           rCtrl: TextEditingController(text: (s['reps'] ?? '').toString()),
+          isCompleted: s['isCompleted'] == true,
         ));
       }
     }
@@ -872,6 +877,7 @@ class _ExData {
       'weight': s.wCtrl.text,
       'sets': s.sCtrl.text,
       'reps': s.rCtrl.text,
+      'isCompleted': s.isCompleted,
     }).toList(),
   };
 
@@ -1004,6 +1010,7 @@ class _ExerciseCard extends StatefulWidget {
   final bool canDelete;
   final VoidCallback onDelete;
   final Function(String) onExerciseChanged;
+  final VoidCallback onSetToggled;
   Timer? debounceTimer;
 
   _ExerciseCard({
@@ -1019,6 +1026,7 @@ class _ExerciseCard extends StatefulWidget {
     required this.canDelete,
     required this.onDelete,
     required this.onExerciseChanged,
+    required this.onSetToggled,
   });
 
   @override
@@ -1274,6 +1282,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           onTap: () {
              if (s.wCtrl.text.isNotEmpty && s.rCtrl.text.isNotEmpty) {
                 setState(() => s.isCompleted = !s.isCompleted);
+                widget.onSetToggled();
              }
           },
           child: Container(

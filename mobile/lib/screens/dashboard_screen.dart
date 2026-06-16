@@ -27,6 +27,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic> _prs = {'Squat': 0, 'Bench': 0, 'Deadlift': 0};
 
   bool _hasDraft = false;
+  String _draftWorkoutName = '';
+  int _draftExerciseCount = 0;
+  int _draftCompletedSets = 0;
+  int _draftTotalSets = 0;
   int _accumulatedSeconds = 0;
   DateTime? _timerStartTime;
   bool _timerRunning = false;
@@ -65,6 +69,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _timerStartTime = null;
       }
 
+      // Extract workout metadata from draft
+      final exercises = draft['exercises'] as List? ?? [];
+      _draftExerciseCount = exercises.where((e) => (e['name'] ?? '').toString().trim().isNotEmpty).length;
+      _draftWorkoutName = '';
+      _draftCompletedSets = 0;
+      _draftTotalSets = 0;
+      for (final ex in exercises) {
+        final name = (ex['name'] ?? '').toString().trim();
+        if (name.isNotEmpty && _draftWorkoutName.isEmpty) {
+          _draftWorkoutName = name;
+        }
+        final sets = ex['sets'] as List? ?? [];
+        _draftTotalSets += sets.length;
+        for (final s in sets) {
+          if (s['isCompleted'] == true) _draftCompletedSets++;
+        }
+      }
+
       if (_timerRunning) {
         _startTimer();
       } else {
@@ -74,6 +96,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (mounted) setState(() {});
     } else {
       _hasDraft = false;
+      _draftWorkoutName = '';
+      _draftExerciseCount = 0;
+      _draftCompletedSets = 0;
+      _draftTotalSets = 0;
       _timerRunning = false;
       _timerTick?.cancel();
       if (mounted) setState(() {});
@@ -88,18 +114,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  int get _currentElapsedSeconds {
-    if (!_timerRunning || _timerStartTime == null) return _accumulatedSeconds;
-    return _accumulatedSeconds + DateTime.now().difference(_timerStartTime!).inSeconds;
-  }
-
-  String get _timerDisplay {
-    final seconds = _currentElapsedSeconds;
-    final h = seconds ~/ 3600;
-    final m = ((seconds % 3600) ~/ 60).toString().padLeft(2, '0');
-    final s = (seconds % 60).toString().padLeft(2, '0');
-    return h > 0 ? '$h:$m:$s' : '$m:$s';
-  }
 
   Future<void> _loadCached() async {
     final prefs = await SharedPreferences.getInstance();
@@ -359,20 +373,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.calendar_month, color: AppColors.accentBlueLight, size: 14),
+              Icon(
+                _hasDraft ? Icons.play_circle_fill : Icons.calendar_month,
+                color: _hasDraft ? AppColors.accentGreen : AppColors.accentBlueLight,
+                size: 14,
+              ),
               const SizedBox(width: 6),
-              const Text('NEXT SESSION', style: TextStyle(fontSize: 12, color: AppColors.accentBlueLight, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+              Text(
+                _hasDraft ? 'WORKOUT IN PROGRESS' : 'NEXT SESSION',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _hasDraft ? AppColors.accentGreen : AppColors.accentBlueLight,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
-            _hasDraft ? 'Workout in progress' : 'Squat Day',
+            _hasDraft
+                ? (_draftWorkoutName.isNotEmpty ? _draftWorkoutName : 'Workout in progress')
+                : 'Squat Day',
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.textPrimary, letterSpacing: 0.3),
           ),
           const SizedBox(height: 12),
-          if (_hasDraft)
-            Text(_timerDisplay, style: const TextStyle(fontSize: 16, color: AppColors.textSecondary, fontFamily: 'monospace'))
-          else
+          if (_hasDraft) ...[
+            _DraftTimerDisplay(
+              timerRunning: _timerRunning,
+              timerStartTime: _timerStartTime,
+              accumulatedSeconds: _accumulatedSeconds,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.fitness_center, color: AppColors.textMuted, size: 14),
+                const SizedBox(width: 6),
+                Text(
+                  '$_draftExerciseCount exercise${_draftExerciseCount == 1 ? '' : 's'}',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('•', style: TextStyle(color: AppColors.textMuted))),
+                const Icon(Icons.check_circle_outline, color: AppColors.textMuted, size: 14),
+                const SizedBox(width: 6),
+                Text(
+                  '$_draftCompletedSets / $_draftTotalSets sets done',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ] else
             Builder(builder: (_) {
               final todayDay = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][DateTime.now().weekday - 1];
               int currentBlock = 1;
@@ -381,14 +431,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 final latest = _sessions.first;
                 currentBlock = latest['block'] ?? 1;
                 currentWeek = latest['week'] ?? 1;
-                // If the latest session's day comes before today in the week, we're still on the same week.
-                // If the latest session IS the last day of the training week (e.g. Sunday) and today is a new week start, bump the week.
                 final latestDay = latest['day'] ?? '';
                 final dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
                 final latestDayIdx = dayOrder.indexOf(latestDay);
                 final todayIdx = dayOrder.indexOf(todayDay);
                 if (todayIdx < latestDayIdx) {
-                  // New week started
                   currentWeek += 1;
                 }
               }
@@ -413,7 +460,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: double.infinity,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.accentBlue,
+                backgroundColor: _hasDraft ? AppColors.accentGreen : AppColors.accentBlue,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -423,10 +470,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.play_arrow, size: 20),
+                  Icon(_hasDraft ? Icons.play_arrow : Icons.add, size: 20),
                   const SizedBox(width: 8),
                   Text(
-                    _hasDraft ? 'Continue Session' : 'Start Session',
+                    _hasDraft ? 'Resume Workout' : 'Start Session',
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
                 ],
@@ -906,6 +953,83 @@ class _RecentSessionTileState extends State<_RecentSessionTile> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DraftTimerDisplay extends StatefulWidget {
+  final bool timerRunning;
+  final DateTime? timerStartTime;
+  final int accumulatedSeconds;
+
+  const _DraftTimerDisplay({
+    required this.timerRunning,
+    this.timerStartTime,
+    required this.accumulatedSeconds,
+  });
+
+  @override
+  State<_DraftTimerDisplay> createState() => _DraftTimerDisplayState();
+}
+
+class _DraftTimerDisplayState extends State<_DraftTimerDisplay> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.timerRunning) _startTick();
+  }
+
+  @override
+  void didUpdateWidget(_DraftTimerDisplay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.timerRunning && !oldWidget.timerRunning) {
+      _startTick();
+    } else if (!widget.timerRunning && oldWidget.timerRunning) {
+      _timer?.cancel();
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _startTick() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  int get _currentSeconds {
+    if (!widget.timerRunning || widget.timerStartTime == null) return widget.accumulatedSeconds;
+    return widget.accumulatedSeconds + DateTime.now().difference(widget.timerStartTime!).inSeconds;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = _currentSeconds;
+    final h = seconds ~/ 3600;
+    final m = ((seconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    final display = h > 0 ? '$h:$m:$s' : '$m:$s';
+    return Row(
+      children: [
+        const Icon(Icons.timer_outlined, color: AppColors.textMuted, size: 14),
+        const SizedBox(width: 6),
+        Text(display, style: const TextStyle(fontSize: 16, color: AppColors.textSecondary, fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+        if (widget.timerRunning) ...[
+          const SizedBox(width: 8),
+          Container(
+            width: 8, height: 8,
+            decoration: const BoxDecoration(color: AppColors.accentGreen, shape: BoxShape.circle),
+          ),
+        ],
+      ],
     );
   }
 }
