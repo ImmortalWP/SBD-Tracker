@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../services/api_service.dart';
 import '../services/analytics_processor.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 import '../widgets/strength_chart.dart';
 import '../widgets/volume_chart.dart';
 
@@ -72,20 +72,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final canPop = Navigator.canPop(context);
 
     return Scaffold(
-      backgroundColor: AppTheme.bg950,
+      backgroundColor: AppColors.bg,
       appBar: canPop ? AppBar(
-        backgroundColor: AppTheme.bg950,
+        backgroundColor: AppColors.bg,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: AppTheme.text100, size: 20),
+          icon: const Icon(Icons.arrow_back_ios, color: AppColors.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ) : null,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadData,
-          color: AppTheme.accentBlue,
-          backgroundColor: AppTheme.bg850,
+          color: AppColors.accentBlue,
+          backgroundColor: AppColors.cardBg,
           child: ListView(
             padding: EdgeInsets.fromLTRB(20, canPop ? 0 : 24, 20, 100),
             children: [
@@ -96,11 +96,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               if (_loading)
                 const Padding(
                   padding: EdgeInsets.all(60),
-                  child: Center(child: CircularProgressIndicator(color: AppTheme.accentBlue, strokeWidth: 2)),
+                  child: Center(child: CircularProgressIndicator(color: AppColors.accentBlue, strokeWidth: 2)),
                 )
               else if (_sessions.isEmpty)
                 _buildEmptyState()
               else ...[
+                _buildSessionRatings(),
+                const SizedBox(height: 16),
                 _buildStrengthChart(processor),
                 const SizedBox(height: 16),
                 _buildKeyMetrics(processor),
@@ -124,22 +126,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       children: [
         const Text(
           'Analytics',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.text50),
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
         ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: AppTheme.bg850,
+            color: AppColors.cardBg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppTheme.bg800),
+            border: Border.all(color: AppColors.borderColor),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<TimeRange>(
               value: _selectedRange,
-              dropdownColor: AppTheme.bg850,
-              icon: const Icon(Icons.keyboard_arrow_down, color: AppTheme.text400, size: 16),
+              dropdownColor: AppColors.cardBg,
+              icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary, size: 16),
               isDense: true,
-              style: const TextStyle(fontSize: 13, color: AppTheme.text200, fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
               onChanged: (TimeRange? newValue) {
                 if (newValue != null) {
                   setState(() => _selectedRange = newValue);
@@ -154,7 +156,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     padding: const EdgeInsets.only(right: 8),
                     child: Row(
                       children: [
-                        const Icon(Icons.calendar_today, size: 12, color: AppTheme.text500),
+                        const Icon(Icons.calendar_today, size: 12, color: AppColors.textMuted),
                         const SizedBox(width: 6),
                         Text(value.label),
                       ],
@@ -178,9 +180,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppTheme.bg900,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.bg800),
+        border: Border.all(color: AppColors.borderColor),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -193,20 +195,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: isSelected ? AppTheme.accentBlue : Colors.transparent,
+                  color: isSelected ? AppColors.accentBlue : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(lift['icon'] as IconData, size: 16, color: isSelected ? Colors.white : AppTheme.text500),
+                    Icon(lift['icon'] as IconData, size: 16, color: isSelected ? Colors.white : AppColors.textMuted),
                     const SizedBox(width: 8),
                     Text(
                       lift['name'] as String,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                        color: isSelected ? Colors.white : AppTheme.text400,
+                        color: isSelected ? Colors.white : AppColors.textSecondary,
                       ),
                     ),
                   ],
@@ -219,15 +221,34 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _buildStrengthChart(AnalyticsProcessor processor) {
-    final data = processor.getStrengthTrend(_selectedLift, _selectedRange);
-    
+  // ─── Session Ratings Card ───
+  Widget _buildSessionRatings() {
+    final ratedSessions = _sessions
+        .where((s) => s['sessionRating'] != null)
+        .toList();
+
+    ratedSessions.sort((a, b) {
+      final da = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime(2000);
+      final db = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(2000);
+      return da.compareTo(db);
+    });
+
+    final recent = ratedSessions.length > 10
+        ? ratedSessions.sublist(ratedSessions.length - 10)
+        : ratedSessions;
+
+    double avgRating = 0;
+    if (recent.isNotEmpty) {
+      avgRating = recent.map((s) => (s['sessionRating'] as num).toDouble()).reduce((a, b) => a + b) / recent.length;
+    }
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppTheme.bg850,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.bg800),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -235,18 +256,189 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Strength Progress (Top Set)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text50)),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: AppColors.accentBlueBg,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.star_rounded, size: 16, color: AppColors.accentBlueLight),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text('SESSION RATINGS', style: TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+                ],
+              ),
+              if (recent.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _ratingBgColor(avgRating),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.trending_up, size: 12, color: _ratingFgColor(avgRating)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Avg ${avgRating.toStringAsFixed(1)}',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _ratingFgColor(avgRating)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          if (recent.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: Text(
+                  'No ratings yet. Rate your next session!',
+                  style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+                ),
+              ),
+            )
+          else ...[
+            SizedBox(
+              height: 120,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: recent.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final session = entry.value;
+                  final rating = (session['sessionRating'] as num).toInt();
+                  final date = DateTime.tryParse(session['date']?.toString() ?? '');
+                  final dateLabel = date != null ? DateFormat('d/M').format(date) : '';
+                  final barHeight = (rating / 10) * 90.0;
+
+                  return Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: index == 0 ? 0 : 4,
+                        right: index == recent.length - 1 ? 0 : 4,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            '$rating',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _ratingDotColor(rating),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeOutBack,
+                            height: barHeight,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  _ratingDotColor(rating).withOpacity(0.3),
+                                  _ratingDotColor(rating),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            dateLabel,
+                            style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(height: 1, color: AppColors.borderColor),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildRatingStat('Best', recent.map((s) => (s['sessionRating'] as num).toInt()).reduce((a, b) => a > b ? a : b).toString(), AppColors.accentGreen),
+                _buildRatingStat('Average', avgRating.toStringAsFixed(1), AppColors.accentBlueLight),
+                _buildRatingStat('Sessions', '${recent.length}', AppColors.textSecondary),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatingStat(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: color, fontFamily: 'monospace')),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+
+  Color _ratingDotColor(int rating) {
+    if (rating <= 3) return const Color(0xFFEF4444);
+    if (rating <= 5) return const Color(0xFFF97316);
+    if (rating <= 7) return const Color(0xFFEAB308);
+    if (rating <= 9) return const Color(0xFF22C55E);
+    return const Color(0xFF10B981);
+  }
+
+  Color _ratingBgColor(double rating) {
+    if (rating <= 3) return const Color(0xFF2D1818);
+    if (rating <= 5) return const Color(0xFF2D2218);
+    if (rating <= 7) return const Color(0xFF2D2A18);
+    return const Color(0xFF182D1E);
+  }
+
+  Color _ratingFgColor(double rating) {
+    if (rating <= 3) return const Color(0xFFEF4444);
+    if (rating <= 5) return const Color(0xFFF97316);
+    if (rating <= 7) return const Color(0xFFEAB308);
+    return const Color(0xFF22C55E);
+  }
+
+  Widget _buildStrengthChart(AnalyticsProcessor processor) {
+    final data = processor.getStrengthTrend(_selectedLift, _selectedRange);
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Strength Progress (Top Set)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppTheme.bg900,
+                  color: AppColors.inputBg,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Row(
-                  children: const [
-                    Text('1RM Trend', style: TextStyle(fontSize: 11, color: AppTheme.text400)),
+                child: const Row(
+                  children: [
+                    Text('1RM Trend', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                     SizedBox(width: 4),
-                    Icon(Icons.keyboard_arrow_down, size: 14, color: AppTheme.text400),
+                    Icon(Icons.keyboard_arrow_down, size: 14, color: AppColors.textSecondary),
                   ],
                 ),
               ),
@@ -276,29 +468,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _buildMetricCard(
           'Current Max',
           '${metrics.currentMax.toStringAsFixed(0)} kg',
-          null, // Or add date of max
-          AppTheme.accentBlue,
+          null,
+          AppColors.accentBlue,
           Icons.emoji_events,
         ),
         _buildMetricCard(
           'Est. 1RM',
           '${metrics.est1RM.toStringAsFixed(0)} kg',
           metrics.prevEst1RM > 0 ? '${metrics.est1RM >= metrics.prevEst1RM ? '+' : ''}${(metrics.est1RM - metrics.prevEst1RM).toStringAsFixed(0)} kg vs last period' : null,
-          AppTheme.accentGreen,
+          AppColors.accentGreen,
           Icons.trending_up,
         ),
         _buildMetricCard(
           'Volume (7d)',
           '${NumberFormat('#,##0').format(metrics.volume7d)} kg',
           metrics.prevVolume7d > 0 ? '${((metrics.volume7d - metrics.prevVolume7d)/metrics.prevVolume7d * 100).toStringAsFixed(0)}% vs last 7 days' : null,
-          const Color(0xFF8B5CF6), // Purple
+          const Color(0xFF8B5CF6),
           Icons.bar_chart,
         ),
         _buildMetricCard(
           'Total Sets',
           '${metrics.totalSets}',
           metrics.prevTotalSets > 0 ? '${metrics.totalSets >= metrics.prevTotalSets ? '+' : ''}${metrics.totalSets - metrics.prevTotalSets} vs last 7 days' : null,
-          AppTheme.accentAmber,
+          const Color(0xFFEAB308),
           Icons.layers,
         ),
       ],
@@ -309,9 +501,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.bg850,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.bg800),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,14 +517,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 child: Icon(icon, size: 14, color: iconColor),
               ),
               const SizedBox(width: 8),
-              Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.text100)),
+              Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
             ],
           ),
           const SizedBox(height: 8),
-          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.text50)),
+          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
           if (subtext != null) ...[
             const SizedBox(height: 4),
-            Text(subtext, style: TextStyle(fontSize: 10, color: subtext.startsWith('-') ? AppTheme.accentRed : AppTheme.accentGreen)),
+            Text(subtext, style: TextStyle(fontSize: 10, color: subtext.startsWith('-') ? AppColors.accentRed : AppColors.accentGreen)),
           ]
         ],
       ),
@@ -345,9 +537,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.bg850,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.bg800),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,25 +547,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: const [
-                  Text('Weekly Volume ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text50)),
-                  Text('(kg)', style: TextStyle(fontSize: 14, color: AppTheme.text400)),
+              const Row(
+                children: [
+                  Text('Weekly Volume ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  Text('(kg)', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
                   SizedBox(width: 4),
-                  Icon(Icons.info_outline, size: 12, color: AppTheme.text500),
+                  Icon(Icons.info_outline, size: 12, color: AppColors.textMuted),
                 ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppTheme.bg900,
+                  color: AppColors.inputBg,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Row(
-                  children: const [
-                    Text('Volume (kg)', style: TextStyle(fontSize: 11, color: AppTheme.text400)),
+                child: const Row(
+                  children: [
+                    Text('Volume (kg)', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                     SizedBox(width: 4),
-                    Icon(Icons.keyboard_arrow_down, size: 14, color: AppTheme.text400),
+                    Icon(Icons.keyboard_arrow_down, size: 14, color: AppColors.textSecondary),
                   ],
                 ),
               ),
@@ -395,22 +587,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.bg850,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.bg800),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Top Lifts', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text50)),
+              Text('Top Lifts', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
               Row(
-                children: const [
-                  Text('View All', style: TextStyle(fontSize: 12, color: AppTheme.accentBlue, fontWeight: FontWeight.w500)),
+                children: [
+                  Text('View All', style: TextStyle(fontSize: 12, color: AppColors.accentBlueLight, fontWeight: FontWeight.w500)),
                   SizedBox(width: 4),
-                  Icon(Icons.chevron_right, size: 14, color: AppTheme.accentBlue),
+                  Icon(Icons.chevron_right, size: 14, color: AppColors.accentBlueLight),
                 ],
               ),
             ],
@@ -429,9 +621,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   Container(
                     width: 24,
                     height: 24,
-                    decoration: BoxDecoration(color: AppTheme.bg800, shape: BoxShape.circle),
+                    decoration: const BoxDecoration(color: AppColors.inputBg, shape: BoxShape.circle),
                     alignment: Alignment.center,
-                    child: Text('${idx + 1}', style: const TextStyle(fontSize: 11, color: AppTheme.text200, fontWeight: FontWeight.w600)),
+                    child: Text('${idx + 1}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -441,20 +633,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(item['name'] as String, style: const TextStyle(fontSize: 13, color: AppTheme.text200)),
-                            Text('${w.toStringAsFixed(0)} kg', style: const TextStyle(fontSize: 13, color: AppTheme.text300, fontFamily: 'monospace')),
+                            Text(item['name'] as String, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                            Text('${w.toStringAsFixed(0)} kg', style: const TextStyle(fontSize: 13, color: AppColors.textMuted, fontFamily: 'monospace')),
                           ],
                         ),
                         const SizedBox(height: 6),
                         Container(
                           height: 4,
                           width: double.infinity,
-                          decoration: BoxDecoration(color: AppTheme.bg900, borderRadius: BorderRadius.circular(2)),
+                          decoration: BoxDecoration(color: AppColors.inputBg, borderRadius: BorderRadius.circular(2)),
                           child: FractionallySizedBox(
                             alignment: Alignment.centerLeft,
                             widthFactor: pct,
                             child: Container(
-                              decoration: BoxDecoration(color: AppTheme.accentBlue, borderRadius: BorderRadius.circular(2)),
+                              decoration: BoxDecoration(color: AppColors.accentBlue, borderRadius: BorderRadius.circular(2)),
                             ),
                           ),
                         ),
@@ -477,18 +669,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.bg850,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.bg800),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: const [
-              Text('Insights', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.text50)),
+          const Row(
+            children: [
+              Text('Insights', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
               SizedBox(width: 6),
-              Icon(Icons.info_outline, size: 12, color: AppTheme.text500),
+              Icon(Icons.info_outline, size: 12, color: AppColors.textMuted),
             ],
           ),
           const SizedBox(height: 16),
@@ -497,15 +689,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             IconData icon;
             switch (insight.type) {
               case InsightType.positive:
-                color = AppTheme.accentGreen;
+                color = AppColors.accentGreen;
                 icon = Icons.trending_up;
                 break;
               case InsightType.warning:
-                color = AppTheme.accentAmber;
+                color = const Color(0xFFEAB308);
                 icon = Icons.warning_amber_rounded;
                 break;
               case InsightType.neutral:
-                color = AppTheme.text500;
+                color = AppColors.textMuted;
                 icon = Icons.info_outline;
                 break;
             }
@@ -528,12 +720,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         Text(insight.text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color)),
                         if (insight.subtext != null) ...[
                           const SizedBox(height: 4),
-                          Text(insight.subtext!, style: const TextStyle(fontSize: 12, color: AppTheme.text300)),
+                          Text(insight.subtext!, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                         ]
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right, size: 16, color: AppTheme.text500),
+                  const Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
                 ],
               ),
             );
@@ -548,16 +740,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 60),
       child: Column(
         children: [
-          Icon(Icons.analytics_outlined, size: 48, color: AppTheme.text700),
+          Icon(Icons.analytics_outlined, size: 48, color: AppColors.textMuted),
           const SizedBox(height: 16),
           const Text(
             'No sessions logged yet',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.text400),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
           ),
           const SizedBox(height: 6),
           const Text(
             'Start training to see your analytics',
-            style: TextStyle(fontSize: 13, color: AppTheme.text600),
+            style: TextStyle(fontSize: 13, color: AppColors.textMuted),
           ),
         ],
       ),

@@ -31,6 +31,7 @@ const SessionSchema = new mongoose.Schema(
     notes: { type: String, default: '' },
     note: { type: String, default: '' },
     intensity: { type: Number },
+    sessionRating: { type: Number, min: 1, max: 10 },
   },
   { timestamps: true }
 );

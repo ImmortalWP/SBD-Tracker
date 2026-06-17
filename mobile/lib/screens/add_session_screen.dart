@@ -440,17 +440,24 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     setState(() { _loading = true; _error = ''; });
 
     try {
+      Map<String, dynamic>? createdSession;
       if (_isEditing) {
-        await ApiService.updateSession(widget.existingSession!['_id'], payload);
+        createdSession = await ApiService.updateSession(widget.existingSession!['_id'], payload);
       } else {
-        await ApiService.createSession(payload);
+        createdSession = await ApiService.createSession(payload);
       }
       _isDiscarding = true;
       await DraftService.clearDraft();
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) {
+        final sessionId = createdSession['_id']?.toString();
+        await _showRatingDialog(sessionId);
+        if (mounted) Navigator.pop(context, true);
+      }
     } catch (e) {
       final msg = e.toString();
       if (msg.contains('SocketException') || msg.contains('ClientException') || msg.contains('Connection') || msg.contains('Timeout')) {
+        final rating = mounted ? await _showRatingDialog(null) : null;
+        if (rating != null) payload['sessionRating'] = rating;
         await OfflineQueue.enqueue({
           'type': _isEditing ? 'update' : 'create',
           if (_isEditing) 'sessionId': widget.existingSession!['_id'],
@@ -471,6 +478,31 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<int?> _showRatingDialog(String? sessionId) async {
+    final rating = await showModalBottomSheet<int>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _SessionRatingSheet(
+        onSubmit: (r) => Navigator.pop(ctx, r),
+        onSkip: () => Navigator.pop(ctx, null),
+      ),
+    );
+
+    if (rating != null && sessionId != null) {
+      try {
+        await ApiService.updateSession(sessionId, {'sessionRating': rating});
+      } catch (_) {
+        final prefs = await SharedPreferences.getInstance();
+        final pending = prefs.getStringList('pending_ratings') ?? [];
+        pending.add('$sessionId:$rating');
+        await prefs.setStringList('pending_ratings', pending);
+      }
+    }
+    return rating;
   }
 
   @override
@@ -1406,6 +1438,197 @@ class _IsolatedTimerDisplayState extends State<_IsolatedTimerDisplay> {
         Text(widget.isRunning ? 'Workout Duration' : 'Paused', style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
         Text('$m:$s', style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       ],
+    );
+  }
+}
+
+class _SessionRatingSheet extends StatefulWidget {
+  final void Function(int rating) onSubmit;
+  final VoidCallback onSkip;
+
+  const _SessionRatingSheet({required this.onSubmit, required this.onSkip});
+
+  @override
+  State<_SessionRatingSheet> createState() => _SessionRatingSheetState();
+}
+
+class _SessionRatingSheetState extends State<_SessionRatingSheet> with SingleTickerProviderStateMixin {
+  int? _selected;
+  late AnimationController _animCtrl;
+  late Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    _scaleAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.elasticOut);
+    _animCtrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  Color _ratingColor(int rating) {
+    if (rating <= 3) return const Color(0xFFEF4444);
+    if (rating <= 5) return const Color(0xFFF97316);
+    if (rating <= 7) return const Color(0xFFEAB308);
+    if (rating <= 9) return const Color(0xFF22C55E);
+    return const Color(0xFF10B981);
+  }
+
+  String _ratingEmoji(int rating) {
+    if (rating <= 2) return '😫';
+    if (rating <= 4) return '😐';
+    if (rating <= 6) return '💪';
+    if (rating <= 8) return '🔥';
+    return '🏆';
+  }
+
+  String _ratingLabel(int rating) {
+    if (rating <= 2) return 'Rough session';
+    if (rating <= 4) return 'Could be better';
+    if (rating <= 6) return 'Solid workout';
+    if (rating <= 8) return 'Great session!';
+    return 'Beast mode!';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scaleAnim,
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: AppColors.borderColor),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: AppColors.accentBlueBg,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.emoji_events, color: AppColors.accentBlueLight, size: 32),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Session Complete! 🎉',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: 0.3),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'How was today\'s workout?',
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 24),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _selected != null
+                  ? Column(
+                      key: ValueKey(_selected),
+                      children: [
+                        Text(_ratingEmoji(_selected!), style: const TextStyle(fontSize: 40)),
+                        const SizedBox(height: 6),
+                        Text(
+                          _ratingLabel(_selected!),
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _ratingColor(_selected!)),
+                        ),
+                      ],
+                    )
+                  : const SizedBox(
+                      key: ValueKey('empty'),
+                      height: 64,
+                      child: Center(
+                        child: Text('Tap a number below', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: List.generate(10, (i) {
+                final rating = i + 1;
+                final isSelected = _selected == rating;
+                final color = _ratingColor(rating);
+                return GestureDetector(
+                  onTap: () => setState(() => _selected = rating),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: isSelected ? color : AppColors.inputBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected ? color : AppColors.borderColor,
+                        width: isSelected ? 2 : 1,
+                      ),
+                      boxShadow: isSelected
+                          ? [BoxShadow(color: color.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))]
+                          : null,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '$rating',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: isSelected ? Colors.white : AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _selected != null ? () => widget.onSubmit(_selected!) : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _selected != null ? AppColors.accentBlue : AppColors.inputBg,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.inputBg,
+                  disabledForegroundColor: AppColors.textMuted,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+                child: Text(
+                  _selected != null ? 'Submit Rating' : 'Select a rating',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: widget.onSkip,
+              child: const Text(
+                'Skip',
+                style: TextStyle(fontSize: 14, color: AppColors.textMuted, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

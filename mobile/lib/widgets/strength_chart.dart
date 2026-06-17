@@ -1,18 +1,18 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 import '../services/analytics_processor.dart';
 
 class StrengthChart extends StatelessWidget {
-  final Map<String, List<StrengthPoint>> data; // lift -> points
+  final Map<String, List<StrengthPoint>> data;
   final TimeRange range;
 
   const StrengthChart({super.key, required this.data, required this.range});
 
   static const _liftColors = {
-    'Squat': AppTheme.accentRed,
-    'Bench': AppTheme.accentBlue,
-    'Deadlift': AppTheme.accentAmber,
+    'Squat': Color(0xFFEF4444),
+    'Bench': AppColors.accentBlue,
+    'Deadlift': Color(0xFFEAB308),
   };
 
   @override
@@ -26,13 +26,12 @@ class StrengthChart extends StatelessWidget {
     final minY = (allValues.reduce((a, b) => a < b ? a : b) * 0.9).floorToDouble();
     final maxY = (allValues.reduce((a, b) => a > b ? a : b) * 1.05).ceilToDouble();
 
-    // Build line data for each lift
     final lineBars = <LineChartBarData>[];
     for (final entry in data.entries) {
       final points = entry.value;
       if (points.isEmpty) continue;
 
-      final color = _liftColors[entry.key] ?? AppTheme.text400;
+      final color = _liftColors[entry.key] ?? AppColors.textSecondary;
       final spots = <FlSpot>[];
 
       for (int i = 0; i < points.length; i++) {
@@ -61,7 +60,6 @@ class StrengthChart extends StatelessWidget {
       ));
     }
 
-    // Use the longest series for bottom labels
     final longestSeries = data.values.reduce((a, b) => a.length >= b.length ? a : b);
     final labelInterval = _getLabelInterval(longestSeries.length);
 
@@ -82,7 +80,7 @@ class StrengthChart extends StatelessWidget {
                 drawVerticalLine: false,
                 horizontalInterval: _getYInterval(minY, maxY),
                 getDrawingHorizontalLine: (value) => FlLine(
-                  color: AppTheme.bg800,
+                  color: AppColors.borderColor,
                   strokeWidth: 0.5,
                 ),
               ),
@@ -101,7 +99,7 @@ class StrengthChart extends StatelessWidget {
                         padding: const EdgeInsets.only(right: 6),
                         child: Text(
                           '${value.toInt()}',
-                          style: const TextStyle(fontSize: 10, color: AppTheme.text600),
+                          style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
                         ),
                       );
                     },
@@ -120,7 +118,7 @@ class StrengthChart extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
                           longestSeries[idx].label,
-                          style: const TextStyle(fontSize: 9, color: AppTheme.text600),
+                          style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
                         ),
                       );
                     },
@@ -130,12 +128,12 @@ class StrengthChart extends StatelessWidget {
               lineTouchData: LineTouchData(
                 handleBuiltInTouches: true,
                 touchTooltipData: LineTouchTooltipData(
-                  getTooltipColor: (touchedSpot) => AppTheme.bg800,
+                  getTooltipColor: (touchedSpot) => AppColors.cardBg,
                   tooltipRoundedRadius: 8,
                   getTooltipItems: (touchedSpots) {
                     return touchedSpots.map((spot) {
                       final liftName = data.keys.elementAt(spot.barIndex);
-                      final color = _liftColors[liftName] ?? AppTheme.text400;
+                      final color = _liftColors[liftName] ?? AppColors.textSecondary;
                       return LineTooltipItem(
                         '${liftName[0]}: ${spot.y.toStringAsFixed(0)}kg',
                         TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
@@ -155,7 +153,7 @@ class StrengthChart extends StatelessWidget {
   Widget _buildLegend() {
     return Row(
       children: data.keys.map((lift) {
-        final color = _liftColors[lift] ?? AppTheme.text400;
+        final color = _liftColors[lift] ?? AppColors.textSecondary;
         return Padding(
           padding: const EdgeInsets.only(right: 16),
           child: Row(
@@ -182,7 +180,7 @@ class StrengthChart extends StatelessWidget {
     return Container(
       height: 160,
       alignment: Alignment.center,
-      child: Text(message, style: const TextStyle(fontSize: 13, color: AppTheme.text600)),
+      child: Text(message, style: const TextStyle(fontSize: 13, color: AppColors.textMuted)),
     );
   }
 

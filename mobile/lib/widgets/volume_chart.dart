@@ -1,6 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 import '../services/analytics_processor.dart';
 
 class VolumeChart extends StatelessWidget {
@@ -14,7 +14,7 @@ class VolumeChart extends StatelessWidget {
       return Container(
         height: 140,
         alignment: Alignment.center,
-        child: const Text('No volume data', style: TextStyle(fontSize: 13, color: AppTheme.text600)),
+        child: const Text('No volume data', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
       );
     }
 
@@ -33,7 +33,7 @@ class VolumeChart extends StatelessWidget {
             drawVerticalLine: false,
             horizontalInterval: _getInterval(maxVol),
             getDrawingHorizontalLine: (value) => FlLine(
-              color: AppTheme.bg800,
+              color: AppColors.borderColor,
               strokeWidth: 0.5,
             ),
           ),
@@ -53,7 +53,7 @@ class VolumeChart extends StatelessWidget {
                     padding: const EdgeInsets.only(right: 6),
                     child: Text(
                       _formatVolume(value),
-                      style: const TextStyle(fontSize: 9, color: AppTheme.text600),
+                      style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
                     ),
                   );
                 },
@@ -66,14 +66,13 @@ class VolumeChart extends StatelessWidget {
                 getTitlesWidget: (value, meta) {
                   final idx = value.toInt();
                   if (idx < 0 || idx >= data.length) return const SizedBox();
-                  // Show every label if few bars, else skip
                   final interval = data.length <= 8 ? 1 : 2;
                   if (idx % interval != 0 && idx != data.length - 1) return const SizedBox();
                   return Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       data[idx].label,
-                      style: const TextStyle(fontSize: 9, color: AppTheme.text600),
+                      style: const TextStyle(fontSize: 9, color: AppColors.textMuted),
                     ),
                   );
                 },
@@ -82,12 +81,12 @@ class VolumeChart extends StatelessWidget {
           ),
           barTouchData: BarTouchData(
             touchTooltipData: BarTouchTooltipData(
-              getTooltipColor: (group) => AppTheme.bg800,
+              getTooltipColor: (group) => AppColors.cardBg,
               tooltipRoundedRadius: 8,
               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                 return BarTooltipItem(
                   _formatVolume(rod.toY),
-                  const TextStyle(color: AppTheme.text100, fontSize: 11, fontWeight: FontWeight.w600),
+                  const TextStyle(color: AppColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600),
                 );
               },
             ),
@@ -100,11 +99,10 @@ class VolumeChart extends StatelessWidget {
 
   List<BarChartGroupData> _buildBars(double maxVol) {
     return List.generate(data.length, (i) {
-      // Color intensity based on relative volume
       final ratio = maxVol > 0 ? data[i].volume / maxVol : 0.0;
       final color = Color.lerp(
-        AppTheme.accentBlue.withValues(alpha: 0.4),
-        AppTheme.accentBlue,
+        AppColors.accentBlue.withValues(alpha: 0.4),
+        AppColors.accentBlue,
         ratio,
       )!;
 
