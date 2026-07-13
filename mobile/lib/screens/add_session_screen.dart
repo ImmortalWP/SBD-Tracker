@@ -560,6 +560,30 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
                     Expanded(child: _addCardBtn('Accessory', 'accessory', Icons.add_circle_outline)),
                   ]
                 ),
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: TextField(
+                    controller: _notesCtrl,
+                    maxLines: 3,
+                    style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                    decoration: InputDecoration(
+                      labelText: 'Workout Notes',
+                      labelStyle: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                      hintText: 'e.g. Left hip felt tight, squats felt slow...',
+                      hintStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+                      filled: true,
+                      fillColor: AppColors.inputBg,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.borderColor)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.borderColor)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.accentBlue)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                    onChanged: (v) {
+                      _isDirty = true;
+                    },
+                  ),
+                ),
                 const SizedBox(height: 32),
               ],
             ),
