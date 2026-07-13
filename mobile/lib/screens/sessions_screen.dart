@@ -508,6 +508,33 @@ class _ExerciseHistoryTileState extends State<_ExerciseHistoryTile> {
                     ),
                     const SizedBox(height: 8),
                     ..._buildSetRows(setsList),
+                    // Exercise note
+                    if (widget.ex['note'] != null && (widget.ex['note']?.toString().trim() ?? '').isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.cardBg,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.borderColor),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.notes, size: 14, color: AppColors.textMuted),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  widget.ex['note'].toString().trim(),
+                                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                   ],
                 ],
               ),

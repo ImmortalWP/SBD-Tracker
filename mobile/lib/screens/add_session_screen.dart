@@ -1099,32 +1099,33 @@ class _ExerciseCardState extends State<_ExerciseCard> {
               const SizedBox(width: 12),
               Expanded(child: _buildNamePicker(context)),
               const SizedBox(width: 12),
-              Container(
-                width: 56,
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(color: AppColors.accentBlueBg, borderRadius: BorderRadius.circular(6)),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: d.pctCtrl,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14, color: AppColors.accentBlue, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
-                        decoration: const InputDecoration(
-                          hintText: '-',
-                          hintStyle: TextStyle(fontSize: 14, color: AppColors.accentBlue),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero,
+              if (d.category == 'main' || d.category == 'secondary')
+                Container(
+                  width: 56,
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(color: AppColors.accentBlueBg, borderRadius: BorderRadius.circular(6)),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: d.pctCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 14, color: AppColors.accentBlue, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                          decoration: const InputDecoration(
+                            hintText: '-',
+                            hintStyle: TextStyle(fontSize: 14, color: AppColors.accentBlue),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ),
                       ),
-                    ),
-                    const Text('%', style: TextStyle(fontSize: 12, color: AppColors.accentBlue, fontWeight: FontWeight.w600)),
-                  ],
+                      const Text('%', style: TextStyle(fontSize: 12, color: AppColors.accentBlue, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
                 ),
-              ),
               if (widget.canDelete) ...[
                 const SizedBox(width: 8),
                 PopupMenuButton<String>(
