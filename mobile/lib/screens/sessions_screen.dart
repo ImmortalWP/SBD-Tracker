@@ -430,6 +430,7 @@ class _ExerciseHistoryTileState extends State<_ExerciseHistoryTile> {
   Widget build(BuildContext context) {
     final name = widget.ex['name']?.toString() ?? 'Unknown Lift';
     final pct = widget.ex['percentage']?.toString();
+    final backoffPct = widget.ex['backoffPercentage']?.toString();
     final setsList = widget.ex['sets'] as List? ?? [];
     
     double maxWeight = 0;
@@ -480,7 +481,11 @@ class _ExerciseHistoryTileState extends State<_ExerciseHistoryTile> {
                           Text(name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.accentBlueLight)),
                           if (pct != null && pct.isNotEmpty) ...[
                             const SizedBox(width: 8),
-                            Text('— $pct%', style: const TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+                            Text('— $pct%', style: const TextStyle(fontSize: 14, color: AppColors.accentBlue, fontWeight: FontWeight.w600)),
+                          ],
+                          if (backoffPct != null && backoffPct.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Text('($backoffPct% backoff)', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                           ],
                         ],
                       ),

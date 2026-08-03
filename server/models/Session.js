@@ -4,12 +4,14 @@ const SetSchema = new mongoose.Schema({
   weight: { type: Number, required: true },
   sets: { type: Number, required: true },
   reps: { type: Number, required: true },
+  percentage: { type: Number },
 });
 
 const ExerciseSchema = new mongoose.Schema({
   name: { type: String, required: true },
   category: { type: String, enum: ['main', 'secondary', 'accessory'], default: 'main' },
   percentage: { type: Number },
+  backoffPercentage: { type: Number },
   note: { type: String, default: '' },
   sets: [SetSchema],
 });

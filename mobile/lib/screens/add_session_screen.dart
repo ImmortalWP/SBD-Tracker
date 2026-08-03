@@ -396,11 +396,13 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       }
       if (sets.isEmpty) continue;
       final pct = ex.pctCtrl.text.trim();
+      final backoffPct = ex.backoffPctCtrl.text.trim();
       final note = ex.noteCtrl.text.trim();
       exercises.add({
         'name': ex.name.trim(),
         'category': ex.category,
         if (pct.isNotEmpty) 'percentage': int.tryParse(pct),
+        if (backoffPct.isNotEmpty) 'backoffPercentage': int.tryParse(backoffPct),
         if (note.isNotEmpty) 'note': note,
         'sets': sets,
       });
@@ -887,15 +889,26 @@ class _ExData {
   String category;
   List<Map<String, dynamic>>? pastSets;
   final TextEditingController pctCtrl;
+  final TextEditingController backoffPctCtrl;
   final TextEditingController noteCtrl;
   final List<_SetData> sets;
 
-  _ExData({required this.id, required this.name, required this.category, required this.pctCtrl, required this.noteCtrl, required this.sets, this.pastSets});
+  _ExData({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.pctCtrl,
+    required this.backoffPctCtrl,
+    required this.noteCtrl,
+    required this.sets,
+    this.pastSets,
+  });
 
   factory _ExData.empty(String category) => _ExData(
     id: 'ex_${_AddSessionScreenState._idCounter++}_${DateTime.now().millisecondsSinceEpoch}',
     name: '', category: category,
     pctCtrl: TextEditingController(),
+    backoffPctCtrl: TextEditingController(),
     noteCtrl: TextEditingController(),
     sets: [_SetData.empty()],
   );
@@ -919,6 +932,7 @@ class _ExData {
       name: m['name'] ?? '',
       category: m['category'] ?? 'main',
       pctCtrl: TextEditingController(text: (m['percentage'] ?? '').toString()),
+      backoffPctCtrl: TextEditingController(text: (m['backoffPercentage'] ?? '').toString()),
       noteCtrl: TextEditingController(text: (m['note'] ?? '').toString()),
       sets: sets,
     );
@@ -928,6 +942,7 @@ class _ExData {
     'name': name,
     'category': category,
     'percentage': pctCtrl.text,
+    'backoffPercentage': backoffPctCtrl.text,
     'note': noteCtrl.text,
     'sets': sets.map((s) => {
       'weight': s.wCtrl.text,
@@ -939,6 +954,7 @@ class _ExData {
 
   void dispose() {
     pctCtrl.dispose();
+    backoffPctCtrl.dispose();
     noteCtrl.dispose();
     for (final s in sets) s.dispose();
   }
@@ -1123,33 +1139,75 @@ class _ExerciseCardState extends State<_ExerciseCard> {
               const SizedBox(width: 12),
               Expanded(child: _buildNamePicker(context)),
               const SizedBox(width: 12),
-              if (d.category == 'main' || d.category == 'secondary')
-                Container(
-                  width: 56,
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  decoration: BoxDecoration(color: AppColors.accentBlueBg, borderRadius: BorderRadius.circular(6)),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: d.pctCtrl,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 14, color: AppColors.accentBlue, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
-                          decoration: const InputDecoration(
-                            hintText: '-',
-                            hintStyle: TextStyle(fontSize: 14, color: AppColors.accentBlue),
-                            border: InputBorder.none,
-                            isDense: true,
-                            contentPadding: EdgeInsets.zero,
+              if (d.category == 'main' || d.category == 'secondary') ...[
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('TOP', style: TextStyle(fontSize: 9, color: AppColors.textMuted, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Container(
+                      width: 52,
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(color: AppColors.accentBlueBg, borderRadius: BorderRadius.circular(6)),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: d.pctCtrl,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 13, color: AppColors.accentBlue, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                              decoration: const InputDecoration(
+                                hintText: '-',
+                                hintStyle: TextStyle(fontSize: 13, color: AppColors.accentBlue),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
                           ),
-                        ),
+                          const Text('%', style: TextStyle(fontSize: 11, color: AppColors.accentBlue, fontWeight: FontWeight.w600)),
+                        ],
                       ),
-                      const Text('%', style: TextStyle(fontSize: 12, color: AppColors.accentBlue, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+                const SizedBox(width: 8),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('BACKOFF', style: TextStyle(fontSize: 9, color: AppColors.textMuted, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Container(
+                      width: 52,
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(color: AppColors.accentBlueBg, borderRadius: BorderRadius.circular(6)),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: d.backoffPctCtrl,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 13, color: AppColors.accentBlue, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                              decoration: const InputDecoration(
+                                hintText: '-',
+                                hintStyle: TextStyle(fontSize: 13, color: AppColors.accentBlue),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ),
+                          const Text('%', style: TextStyle(fontSize: 11, color: AppColors.accentBlue, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               if (widget.canDelete) ...[
                 const SizedBox(width: 8),
                 PopupMenuButton<String>(
