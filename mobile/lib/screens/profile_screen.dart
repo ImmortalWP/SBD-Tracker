@@ -7,7 +7,7 @@ import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/export_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -23,13 +23,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _loading = true;
   int _totalSessions = 0;
 
-  // Theme Colors
-  static const Color _bgColor = Color(0xFF0F172A);
-  static const Color _cardColor = Color(0xFF1E293B);
-  static const Color _primaryAccent = Color(0xFF3B82F6);
-  static const Color _textHighContrast = Color(0xFFF8FAFC);
-  static const Color _textMuted = Color(0xFF94A3B8);
-  static const Color _textDim = Color(0xFF64748B);
+  // Theme Colors — use unified AppColors
+  static const Color _bgColor = AppColors.bg;
+  static const Color _cardColor = AppColors.cardBg;
+  static const Color _primaryAccent = AppColors.accentBlueLight;
+  static const Color _textHighContrast = AppColors.textPrimary;
+  static const Color _textMuted = AppColors.textSecondary;
+  static const Color _textDim = AppColors.textMuted;
 
   // Editable 1RM controllers
   final _squatRMCtrl = TextEditingController();
@@ -187,7 +187,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Profile saved'),
-          backgroundColor: AppTheme.accentGreen,
+          backgroundColor: AppColors.accentGreen,
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -195,7 +195,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Failed: ${e.toString().replaceFirst("Exception: ", "")}'),
-          backgroundColor: AppTheme.accentRed,
+          backgroundColor: AppColors.accentRed,
         ));
       }
     }
@@ -508,7 +508,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       decoration: BoxDecoration(
         color: _cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         children: [
@@ -522,7 +522,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w900, color: _textHighContrast, letterSpacing: -0.5),
           ),
           const SizedBox(height: 20),
-          Container(height: 1, color: Colors.white.withOpacity(0.05)),
+          Container(height: 1, color: AppColors.borderColor),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -587,7 +587,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       decoration: BoxDecoration(
         color: _cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         children: [
@@ -616,7 +616,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       decoration: BoxDecoration(
         color: _cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -650,7 +650,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          Container(height: 1, color: Colors.white.withOpacity(0.05)),
+          Container(height: 1, color: AppColors.borderColor),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -707,7 +707,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: BoxDecoration(
               color: _cardColor,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.05)),
+              border: Border.all(color: AppColors.borderColor),
             ),
             child: const Center(
               child: Text(
@@ -722,7 +722,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: BoxDecoration(
               color: _cardColor,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.05)),
+              border: Border.all(color: AppColors.borderColor),
             ),
             child: ListView.separated(
               shrinkWrap: true,
@@ -786,7 +786,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       decoration: BoxDecoration(
         color: _cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: AppColors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -873,7 +873,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             fillColor: _bgColor,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.white.withOpacity(0.05)),
+              borderSide: BorderSide(color: AppColors.borderColor),
             ),
           ),
         ),
@@ -909,7 +909,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           decoration: BoxDecoration(
             color: _cardColor,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.05)),
+            border: Border.all(color: AppColors.borderColor),
           ),
           child: Column(
             children: [
@@ -1032,7 +1032,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       height: 1,
-      color: Colors.white.withOpacity(0.05),
+      color: AppColors.borderColor,
     );
   }
 
