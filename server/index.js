@@ -85,7 +85,6 @@ app.use(cors({
 
 // ─── Security: Body parsing with size limits ───
 app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // ─── Security: Sanitize MongoDB queries — prevent NoSQL injection ───
 app.use(mongoSanitize({
