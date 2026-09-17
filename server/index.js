@@ -3,7 +3,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
-const mongoSanitize = require('express-mongo-sanitize');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const sessionRoutes = require('./routes/sessions');
 const authRoutes = require('./routes/auth');
@@ -86,13 +85,25 @@ app.use(cors({
 // ─── Security: Body parsing with size limits ───
 app.use(express.json({ limit: '1mb' }));
 
-// ─── Security: Sanitize MongoDB queries — prevent NoSQL injection ───
-app.use(mongoSanitize({
-  replaceWith: '_',
-  onSanitize: ({ req, key }) => {
-    console.warn(`⚠️ Sanitized NoSQL injection attempt in ${key} from ${req.ip}`);
-  },
-}));
+// ─── Security: NoSQL injection sanitizer (Express v5 compatible) ───
+// express-mongo-sanitize is incompatible with Express v5 (req.query is read-only).
+// This custom middleware sanitizes req.body and req.params in-place.
+// req.query values are validated per-route via validators.js helpers.
+function sanitizeObject(obj) {
+  if (!obj || typeof obj !== 'object') return;
+  for (const key of Object.keys(obj)) {
+    if (key.startsWith('$') || key.includes('.')) {
+      delete obj[key];
+    } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+      sanitizeObject(obj[key]);
+    }
+  }
+}
+app.use((req, _res, next) => {
+  if (req.body) sanitizeObject(req.body);
+  if (req.params) sanitizeObject(req.params);
+  next();
+});
 
 // ─── Security: HTTPS redirect in production ───
 if (isProduction) {
