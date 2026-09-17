@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'api_service.dart';
 import 'secure_token_storage.dart';
+import 'local_db.dart';
+import 'sync_engine.dart';
 
 class AuthService extends ChangeNotifier {
   String? _token;
@@ -73,6 +75,9 @@ class AuthService extends ChangeNotifier {
     await SecureTokenStorage.deleteToken();
     // Clear ApiService cached token
     ApiService.setCachedToken(null);
+    // Stop sync engine and clear local data
+    SyncEngine.stop();
+    await LocalDB.clearAll();
     notifyListeners();
   }
 }

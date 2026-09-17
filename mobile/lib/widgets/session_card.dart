@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/offline_queue.dart';
 import '../screens/add_session_screen.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 import 'package:intl/intl.dart';
 
 class SessionCard extends StatelessWidget {
@@ -65,12 +65,12 @@ class SessionCard extends StatelessWidget {
             Expanded(
               child: Text(
                 metaString,
-                style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontWeight: FontWeight.w500),
+                style: const TextStyle(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w500),
               ),
             ),
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: AppTheme.text500, size: 20),
-              color: AppTheme.bg850,
+              icon: const Icon(Icons.more_vert, color: AppColors.textMuted, size: 20),
+              color: AppColors.cardBg,
               padding: EdgeInsets.zero,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               onSelected: (v) {
@@ -78,8 +78,8 @@ class SessionCard extends StatelessWidget {
                 if (v == 'delete') _handleDelete(context);
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, size: 18, color: AppTheme.text400), SizedBox(width: 8), Text('Edit')])),
-                const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 18, color: AppTheme.accentRed), SizedBox(width: 8), Text('Delete', style: TextStyle(color: AppTheme.accentRed))])),
+                const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit, size: 18, color: AppColors.textSecondary), SizedBox(width: 8), Text('Edit')])),
+                const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 18, color: AppColors.accentRed), SizedBox(width: 8), Text('Delete', style: TextStyle(color: AppColors.accentRed))])),
               ],
             ),
           ],
@@ -97,9 +97,9 @@ class SessionCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.notes, size: 14, color: AppTheme.text600),
+                const Icon(Icons.notes, size: 14, color: AppColors.textMuted),
                 const SizedBox(width: 8),
-                Expanded(child: Text(session['notes'], style: const TextStyle(fontSize: 13, color: AppTheme.text400, fontStyle: FontStyle.italic))),
+                Expanded(child: Text(session['notes'], style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontStyle: FontStyle.italic))),
               ],
             ),
           ),
@@ -109,9 +109,9 @@ class SessionCard extends StatelessWidget {
 
   Widget _buildCompactExerciseRow(dynamic ex) {
     final cat = ex['category'];
-    Color color = AppTheme.accentGreen;
-    if (cat == 'main') color = AppTheme.accentRed;
-    else if (cat == 'secondary') color = AppTheme.accentBlue;
+    Color color = AppColors.accentGreen;
+    if (cat == 'main') color = AppColors.accentRed;
+    else if (cat == 'secondary') color = AppColors.accentBlue;
 
     final sets = ex['sets'] as List? ?? [];
     
@@ -141,11 +141,11 @@ class SessionCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.only(left: 12),
               decoration: const BoxDecoration(
-                border: Border(left: BorderSide(color: AppTheme.bg800, width: 2)),
+                border: Border(left: BorderSide(color: AppColors.borderColor, width: 2)),
               ),
               child: Text(
                 setsDisplay,
-                style: const TextStyle(fontSize: 13, color: AppTheme.text500, fontFamily: 'monospace', height: 1.5),
+                style: const TextStyle(fontSize: 13, color: AppColors.textMuted, fontFamily: 'monospace', height: 1.5),
               ),
             ),
           ],
@@ -155,9 +155,9 @@ class SessionCard extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.notes, size: 12, color: AppTheme.text600),
+                  const Icon(Icons.notes, size: 12, color: AppColors.textMuted),
                   const SizedBox(width: 6),
-                  Expanded(child: Text(ex['note'], style: const TextStyle(fontSize: 12, color: AppTheme.text400, fontStyle: FontStyle.italic))),
+                  Expanded(child: Text(ex['note'], style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontStyle: FontStyle.italic))),
                 ],
               ),
             ),
@@ -178,14 +178,14 @@ class SessionCard extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.bg850,
+        backgroundColor: AppColors.cardBg,
         title: const Text('Delete Session?'),
-        content: const Text('This action cannot be undone.', style: TextStyle(color: AppTheme.text400)),
+        content: const Text('This action cannot be undone.', style: TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: AppTheme.accentRed)),
+            child: const Text('Delete', style: TextStyle(color: AppColors.accentRed)),
           ),
         ],
       ),

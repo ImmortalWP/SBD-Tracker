@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 import '../services/analytics_processor.dart';
 
 class InsightsWidget extends StatelessWidget {
@@ -60,11 +60,11 @@ class InsightsWidget extends StatelessWidget {
   Color _colorFor(InsightType type) {
     switch (type) {
       case InsightType.positive:
-        return AppTheme.accentGreen;
+        return AppColors.accentGreen;
       case InsightType.warning:
-        return AppTheme.accentAmber;
+        return AppColors.accentAmber;
       case InsightType.neutral:
-        return AppTheme.text500;
+        return AppColors.textMuted;
     }
   }
 }

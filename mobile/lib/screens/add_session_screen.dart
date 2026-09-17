@@ -10,6 +10,7 @@ import '../services/draft_service.dart';
 import '../services/analytics_processor.dart';
 import '../theme/app_colors.dart';
 import '../widgets/pr_celebration_modal.dart';
+import '../services/pr_tracker.dart';
 import 'package:intl/intl.dart';
 
 class AddSessionScreen extends StatefulWidget {
@@ -46,9 +47,9 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
   final _mainLifts = ['Squat', 'Bench', 'Deadlift'];
 
   static const Map<String, List<String>> _secondaryLifts = {
-    'Squat': ['Pause Squat', 'Box Squat', 'Tempo Squat', 'Pin Squat'],
-    'Bench': ['Pause Bench', 'Close Grip Bench', 'Larsen Press', 'Pin Bench', 'Wide Grip Bench'],
-    'Deadlift': ['Pause Deadlift', 'Deficit Deadlift', 'Block Pull', 'RDL'],
+    'Squat': ['Pause Squat', 'Box Squat', 'Tempo Squat', 'Pin Squat', 'Competition Squat', 'High Bar Squat', 'Low Bar Squat', 'Front Squat', 'Safety Bar Squat'],
+    'Bench': ['Pause Bench', 'Close Grip Bench', 'Larsen Press', 'Pin Bench', 'Wide Grip Bench', 'Competition Bench', 'Spoto Press', 'Floor Press', 'Incline Bench Press'],
+    'Deadlift': ['Pause Deadlift', 'Deficit Deadlift', 'Block Pull', 'RDL', 'Competition Deadlift', 'Sumo Deadlift', 'Snatch Grip Deadlift', 'Stiff Leg Deadlift', 'Trap Bar Deadlift'],
   };
 
   List<String> get _allSecondaryLifts => _secondaryLifts.values.expand((e) => e).toList();
@@ -451,6 +452,20 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
       _isDiscarding = true;
       await DraftService.clearDraft();
       if (mounted) {
+        // Check for new PRs
+        final prAchievements = await PRTracker.checkForPRs(payload);
+        if (prAchievements.isNotEmpty && mounted) {
+          final topPR = prAchievements.first;
+          if (topPR.type == PRType.weight) {
+            PRCelebrationModal.show(
+              context,
+              exercise: topPR.exerciseName,
+              weight: topPR.value,
+              reps: 1, // Weight PR
+            );
+            await Future.delayed(const Duration(seconds: 3));
+          }
+        }
         final sessionId = createdSession['_id']?.toString();
         await _showRatingDialog(sessionId);
         if (mounted) Navigator.pop(context, true);

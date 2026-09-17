@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_colors.dart';
+import 'plate_calculator_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -959,6 +960,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     await prefs.setBool('profile_notifications', v);
                   },
                 ),
+              ),
+              _buildDivider(),
+              _buildSettingItem(
+                icon: Icons.calculate_outlined,
+                title: 'Plate & Warm-up Calculator',
+                trailing: const Icon(Icons.chevron_right, color: _textDim, size: 18),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlateCalculatorScreen())),
               ),
               _buildDivider(),
               _buildSettingItem(

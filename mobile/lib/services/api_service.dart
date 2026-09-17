@@ -201,6 +201,59 @@ class ApiService {
     throw Exception('Failed to save PR');
   }
 
+  // Programs
+  static Future<List<dynamic>> getPrograms() async {
+    final res = await _executeRead(() => http.get(Uri.parse('$baseUrl/programs'), headers: _headersSync()));
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    throw Exception('Failed to load programs');
+  }
+
+  static Future<Map<String, dynamic>> getProgram(String id) async {
+    final res = await _executeRead(() => http.get(Uri.parse('$baseUrl/programs/$id'), headers: _headersSync()));
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    throw Exception('Failed to load program');
+  }
+
+  static Future<Map<String, dynamic>?> getActiveProgram() async {
+    final res = await _executeRead(() => http.get(Uri.parse('$baseUrl/programs/user/active'), headers: _headersSync()));
+    if (res.statusCode == 200) {
+      final body = jsonDecode(res.body);
+      if (body == null) return null;
+      return body;
+    }
+    throw Exception('Failed to load active program');
+  }
+
+  static Future<Map<String, dynamic>> startProgram(String id) async {
+    final res = await _executeWrite(() => http.post(
+      Uri.parse('$baseUrl/programs/$id/start'),
+      headers: _headersSync(),
+    ));
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    throw Exception('Failed to start program');
+  }
+
+  static Future<void> stopProgram(String id) async {
+    final res = await _executeWrite(() => http.post(
+      Uri.parse('$baseUrl/programs/$id/stop'),
+      headers: _headersSync(),
+    ));
+    if (res.statusCode != 200) throw Exception('Failed to stop program');
+  }
+
+  static Future<Map<String, dynamic>> updateProgramProgress(String id, {int? currentWeek, int? currentDay}) async {
+    final data = <String, dynamic>{};
+    if (currentWeek != null) data['currentWeek'] = currentWeek;
+    if (currentDay != null) data['currentDay'] = currentDay;
+    final res = await _executeWrite(() => http.put(
+      Uri.parse('$baseUrl/programs/$id/progress'),
+      headers: _headersSync(),
+      body: jsonEncode(data),
+    ));
+    if (res.statusCode == 200) return jsonDecode(res.body);
+    throw Exception('Failed to update progress');
+  }
+
   // Headers helper — uses in-memory cached token (loaded from secure storage)
   // Never reads token from SharedPreferences
   static Map<String, String> _headersSync() {

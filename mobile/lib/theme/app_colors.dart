@@ -22,8 +22,10 @@ class AppColors {
   static const Color accentBlueBg = Color(0xFF172554);
   static const Color accentGreen = Color(0xFF22C55E);
   static const Color accentRed = Color(0xFFEF4444);
+  static const Color accentAmber = Color(0xFFF59E0B);
 
   // ─── Stats (Sessions Screen) ───
   static const Color statYellow = Color(0xFFEAB308);
   static const Color statPurple = Color(0xFFA855F7);
 }
+

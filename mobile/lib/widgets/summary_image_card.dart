@@ -4,7 +4,7 @@ import 'package:screenshot/screenshot.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 
 class SummaryImageGenerator {
   static Future<void> shareSummaryImage(BuildContext context, Map<String, dynamic> prs, int totalSessions) async {
@@ -31,7 +31,7 @@ class SummaryImageGenerator {
             height: 1920, // 9:16 aspect ratio for IG stories
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppTheme.bg950, AppTheme.bg850],
+                colors: [AppColors.bg, AppColors.cardBg],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),

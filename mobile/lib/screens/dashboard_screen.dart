@@ -12,6 +12,7 @@ import '../screens/add_session_screen.dart';
 import '../screens/sessions_screen.dart';
 import '../screens/analytics_screen.dart';
 import '../screens/profile_screen.dart';
+import '../screens/programs_screen.dart';
 import '../services/analytics_processor.dart';
 import '../theme/app_colors.dart';
 
@@ -212,7 +213,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             IndexedStack(
               index: _navIndex,
-              children: List.generate(4, (i) {
+              children: List.generate(5, (i) {
                 // Lazy loading: only build tabs that have been visited
                 if (!_visitedTabs.contains(i)) {
                   return const SizedBox.shrink();
@@ -245,8 +246,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   case 1:
                     return SessionsScreen(sessions: _sessions, onRefresh: _loadData, prs: _prs);
                   case 2:
-                    return const AnalyticsScreen();
+                    return const ProgramsScreen();
                   case 3:
+                    return const AnalyticsScreen();
+                  case 4:
                     return const ProfileScreen();
                   default:
                     return const SizedBox.shrink();
@@ -254,6 +257,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               }),
             ),
             _buildBottomNav(),
+            // FAB for quick session creation
+            Positioned(
+              bottom: 52,
+              right: 20,
+              child: _buildFab(),
+            ),
           ],
         ),
       ),
@@ -359,6 +368,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  /// Derive the next session title from the last same-weekday session.
+  String _getNextSessionTitle() {
+    final todayDay = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][DateTime.now().weekday - 1];
+    // Find the last session on this weekday
+    for (final s in _sessions) {
+      if (s['day'] == todayDay) {
+        final exercises = s['exercises'] as List? ?? [];
+        if (exercises.isNotEmpty) {
+          // Build title from main lifts
+          final mainLifts = exercises
+              .where((e) => (e['category'] ?? 'main') == 'main')
+              .map((e) => e['name']?.toString() ?? '')
+              .where((n) => n.isNotEmpty)
+              .toList();
+          if (mainLifts.isNotEmpty) return mainLifts.join(' + ');
+          return exercises.first['name']?.toString() ?? '$todayDay Training';
+        }
+      }
+    }
+    return '$todayDay Training';
+  }
+
   Widget _buildNextSessionCard() {
     return Container(
       width: double.infinity,
@@ -394,7 +425,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Text(
             _hasDraft
                 ? (_draftWorkoutName.isNotEmpty ? _draftWorkoutName : 'Workout in progress')
-                : 'Squat Day',
+                : _getNextSessionTitle(),
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.textPrimary, letterSpacing: 0.3),
           ),
           const SizedBox(height: 12),
@@ -489,11 +520,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final s = _prs['Squat'] ?? 0;
     final b = _prs['Bench'] ?? 0;
     final d = _prs['Deadlift'] ?? 0;
-    
-    // Attempt to extract historical "Best" for UI mockup accuracy (fake slight increase for UI demo if no history exists, otherwise use real)
-    final bestS = s > 0 ? (s * 1.01).toStringAsFixed(0) : '0';
-    final bestB = b > 0 ? (b * 1.02).toStringAsFixed(0) : '0';
-    final bestD = d > 0 ? (d * 1.02).toStringAsFixed(0) : '0';
+    final total = (s as num) + (b as num) + (d as num);
 
     return Container(
       width: double.infinity,
@@ -506,11 +533,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         children: [
           Row(
+            children: [
+              const Icon(Icons.emoji_events_outlined, size: 14, color: AppColors.accentBlueLight),
+              const SizedBox(width: 6),
+              const Text('SBD PERFORMANCE', style: TextStyle(fontSize: 12, color: AppColors.accentBlueLight, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStatCol('SQUAT', Icons.sports_gymnastics, s, bestS),
-              _buildStatCol('BENCH', Icons.airline_seat_flat_angled, b, bestB),
-              _buildStatCol('DEADLIFT', Icons.fitness_center, d, bestD),
+              _buildStatCol('SQUAT', Icons.sports_gymnastics, s),
+              _buildStatCol('BENCH', Icons.airline_seat_flat_angled, b),
+              _buildStatCol('DEADLIFT', Icons.fitness_center, d),
             ],
           ),
           const SizedBox(height: 20),
@@ -523,11 +558,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   const Icon(Icons.monitor_weight_outlined, size: 18, color: AppColors.textSecondary),
                   const SizedBox(width: 8),
-                  const Text('Total Volume', style: TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w500)),
+                  const Text('SBD Total', style: TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w500)),
                 ],
               ),
               Text(
-                '${((_prs['Squat'] ?? 0) + (_prs['Bench'] ?? 0) + (_prs['Deadlift'] ?? 0)).toString().replaceAll('.0', '')} kg',
+                '${total.toString().replaceAll('.0', '')} kg',
                 style: const TextStyle(color: AppColors.accentBlueLight, fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'monospace'),
               ),
             ],
@@ -537,7 +572,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildStatCol(String title, IconData icon, num current, String best) {
+  Widget _buildStatCol(String title, IconData icon, num current) {
     return Column(
       children: [
         Row(
@@ -557,8 +592,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const Text('kg', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
           ],
         ),
-        const SizedBox(height: 4),
-        Text('Best: $best kg', style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
       ],
     );
   }
@@ -701,11 +734,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           border: const Border(top: BorderSide(color: AppColors.borderColor)),
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _buildNavItem(0, Icons.home, 'Home'),
             _buildNavItem(1, Icons.calendar_today, 'Sessions'),
-            _buildFab(),
+            _buildNavItem(2, Icons.fitness_center, 'Programs'),
             _buildNavItem(3, Icons.bar_chart, 'Analytics'),
             _buildNavItem(4, Icons.person_outline, 'Profile'),
           ],
@@ -715,27 +748,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildNavItem(int index, IconData icon, String label) {
-    // Map visual index to IndexedStack index (skipping FAB)
-    int stackIndex = index;
-    if (index > 2) stackIndex = index - 1;
-
-    final active = _navIndex == stackIndex && index != 2;
+    final active = _navIndex == index;
     return GestureDetector(
       onTap: () {
-        if (index == 2) return; // FAB handled separately
         setState(() {
-          _navIndex = stackIndex;
-          _visitedTabs.add(stackIndex);
+          _navIndex = index;
+          _visitedTabs.add(index);
         });
       },
       behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: active ? AppColors.accentBlueLight : AppColors.textMuted, size: 24),
-          const SizedBox(height: 4),
-          Text(label, style: TextStyle(color: active ? AppColors.accentBlueLight : AppColors.textMuted, fontSize: 11, fontWeight: active ? FontWeight.w600 : FontWeight.w500)),
-        ],
+      child: SizedBox(
+        width: 60,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: active ? AppColors.accentBlueLight : AppColors.textMuted, size: 22),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(color: active ? AppColors.accentBlueLight : AppColors.textMuted, fontSize: 10, fontWeight: active ? FontWeight.w600 : FontWeight.w500)),
+          ],
+        ),
       ),
     );
   }

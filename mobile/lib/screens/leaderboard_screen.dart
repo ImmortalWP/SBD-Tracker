@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -73,18 +73,18 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
     return RefreshIndicator(
       onRefresh: _loadData,
-      color: AppTheme.accentRed,
+      color: AppColors.accentRed,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           const Row(
             children: [
               Text('🏆 ', style: TextStyle(fontSize: 24)),
-              Text('Leaderboard', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppTheme.text50)),
+              Text('Leaderboard', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
             ],
           ),
           const SizedBox(height: 4),
-          const Text('Compare PRs across all lifters.', style: TextStyle(fontSize: 13, color: AppTheme.text400)),
+          const Text('Compare PRs across all lifters.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
           const SizedBox(height: 16),
 
           // Filter buttons
@@ -105,10 +105,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             ...List.generate(3, (_) => Container(
               height: 80,
               margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(color: AppTheme.bg850, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.bg800)),
+              decoration: BoxDecoration(color: AppColors.cardBg, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.borderColor)),
             ))
           else if (sorted.isEmpty)
-            const Card(child: Padding(padding: EdgeInsets.all(32), child: Center(child: Text('No lifters yet.', style: TextStyle(color: AppTheme.text400)))))
+            const Card(child: Padding(padding: EdgeInsets.all(32), child: Center(child: Text('No lifters yet.', style: TextStyle(color: AppColors.textSecondary)))))
           else
             ...sorted.asMap().entries.map((entry) {
               final idx = entry.key;
@@ -121,10 +121,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: idx < 3 ? medalColors[idx].withValues(alpha: 0.08) : AppTheme.bg850,
+                  color: idx < 3 ? medalColors[idx].withValues(alpha: 0.08) : AppColors.cardBg,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: isMe ? AppTheme.accentRed.withValues(alpha: 0.3) : (idx < 3 ? medalColors[idx].withValues(alpha: 0.2) : AppTheme.bg800),
+                    color: isMe ? AppColors.accentRed.withValues(alpha: 0.3) : (idx < 3 ? medalColors[idx].withValues(alpha: 0.2) : AppColors.borderColor),
                   ),
                 ),
                 child: Column(
@@ -138,8 +138,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               ? Text(medals[idx], style: const TextStyle(fontSize: 24))
                               : Container(
                                   width: 32, height: 32,
-                                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppTheme.bg800, border: Border.all(color: AppTheme.bg700)),
-                                  child: Center(child: Text('${idx + 1}', style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.text400, fontSize: 13))),
+                                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.borderColor, border: Border.all(color: AppColors.borderColor)),
+                                  child: Center(child: Text('${idx + 1}', style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textSecondary, fontSize: 13))),
                                 ),
                         ),
                         const SizedBox(width: 12),
@@ -150,17 +150,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                             children: [
                               Row(
                                 children: [
-                                  Text(e['username'], style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.text50, fontSize: 15)),
+                                  Text(e['username'], style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary, fontSize: 15)),
                                   if (isMe) ...[
                                     const SizedBox(width: 6),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                       decoration: BoxDecoration(
-                                        color: AppTheme.accentRed.withValues(alpha: 0.15),
+                                        color: AppColors.accentRed.withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.2)),
+                                        border: Border.all(color: AppColors.accentRed.withValues(alpha: 0.2)),
                                       ),
-                                      child: const Text('YOU', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppTheme.accentRed)),
+                                      child: const Text('YOU', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.accentRed)),
                                     ),
                                   ],
                                 ],
@@ -168,11 +168,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  _liftBadge('S', e['Squat'], AppTheme.accentRed),
+                                  _liftBadge('S', e['Squat'], AppColors.accentRed),
                                   const SizedBox(width: 6),
-                                  _liftBadge('B', e['Bench'], AppTheme.accentBlue),
+                                  _liftBadge('B', e['Bench'], AppColors.accentBlue),
                                   const SizedBox(width: 6),
-                                  _liftBadge('D', e['Deadlift'], AppTheme.accentAmber),
+                                  _liftBadge('D', e['Deadlift'], AppColors.accentAmber),
                                 ],
                               ),
                             ],
@@ -186,12 +186,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               displayVal > 0 ? '$displayVal' : '—',
                               style: TextStyle(
                                 fontSize: 24, fontWeight: FontWeight.w800, fontFamily: 'monospace',
-                                color: idx == 0 ? medalColors[0] : idx == 1 ? medalColors[1] : idx == 2 ? medalColors[2] : AppTheme.text100,
+                                color: idx == 0 ? medalColors[0] : idx == 1 ? medalColors[1] : idx == 2 ? medalColors[2] : AppColors.textPrimary,
                               ),
                             ),
                             Text(
                               '${displayVal > 0 ? "kg " : ""}${_selectedLift == "total" ? "total" : _selectedLift}',
-                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: AppTheme.text500, letterSpacing: 0.5),
+                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: 0.5),
                             ),
                           ],
                         ),
@@ -205,9 +205,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         child: LinearProgressIndicator(
                           value: (displayVal / topVal).clamp(0.05, 1.0).toDouble(),
                           minHeight: 5,
-                          backgroundColor: AppTheme.bg800,
+                          backgroundColor: AppColors.borderColor,
                           valueColor: AlwaysStoppedAnimation(
-                            idx == 0 ? medalColors[0] : idx == 1 ? medalColors[1] : idx == 2 ? medalColors[2] : AppTheme.accentRed,
+                            idx == 0 ? medalColors[0] : idx == 1 ? medalColors[1] : idx == 2 ? medalColors[2] : AppColors.accentRed,
                           ),
                         ),
                       ),
@@ -228,8 +228,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       child: OutlinedButton(
         onPressed: () => setState(() => _selectedLift = key),
         style: OutlinedButton.styleFrom(
-          backgroundColor: active ? AppTheme.accentRed.withValues(alpha: 0.1) : AppTheme.bg800.withValues(alpha: 0.5),
-          side: BorderSide(color: active ? AppTheme.accentRed.withValues(alpha: 0.25) : AppTheme.bg700),
+          backgroundColor: active ? AppColors.accentRed.withValues(alpha: 0.1) : AppColors.borderColor.withValues(alpha: 0.5),
+          side: BorderSide(color: active ? AppColors.accentRed.withValues(alpha: 0.25) : AppColors.borderColor),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
@@ -237,7 +237,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           children: [
             Text(emoji, style: const TextStyle(fontSize: 14)),
             const SizedBox(width: 6),
-            Text(label, style: TextStyle(color: active ? AppTheme.accentRed : AppTheme.text400, fontWeight: FontWeight.w600, fontSize: 13)),
+            Text(label, style: TextStyle(color: active ? AppColors.accentRed : AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 13)),
           ],
         ),
       ),

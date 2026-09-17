@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_colors.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -53,7 +53,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bg950,
+      backgroundColor: AppColors.bg,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -66,11 +66,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   width: 70,
                   height: 70,
                   decoration: BoxDecoration(
-                    color: AppTheme.accentRed.withValues(alpha: 0.15),
+                    color: AppColors.accentBlue.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.25)),
+                    border: Border.all(color: AppColors.accentBlue.withValues(alpha: 0.25)),
                   ),
-                  child: const Icon(Icons.fitness_center, color: AppTheme.accentRed, size: 34),
+                  child: const Icon(Icons.fitness_center, color: AppColors.accentBlue, size: 34),
                 ),
                 const SizedBox(height: 16),
                 const Text(
@@ -78,14 +78,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w800,
-                    color: AppTheme.text50,
+                    color: AppColors.textPrimary,
                     letterSpacing: -0.5,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   _isRegister ? 'Create your account' : 'Welcome back, lifter',
-                  style: const TextStyle(color: AppTheme.text500, fontSize: 14),
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
                 ),
                 const SizedBox(height: 32),
 
@@ -95,15 +95,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     margin: const EdgeInsets.only(bottom: 16),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: AppTheme.accentRed.withValues(alpha: 0.1),
+                      color: AppColors.accentRed.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppTheme.accentRed.withValues(alpha: 0.25)),
+                      border: Border.all(color: AppColors.accentRed.withValues(alpha: 0.25)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: AppTheme.accentRed, size: 18),
+                        const Icon(Icons.error_outline, color: AppColors.accentRed, size: 18),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(_error, style: const TextStyle(color: AppTheme.accentRed, fontSize: 13))),
+                        Expanded(child: Text(_error, style: const TextStyle(color: AppColors.accentRed, fontSize: 13))),
                       ],
                     ),
                   ),
@@ -160,7 +160,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: () => setState(() { _isRegister = !_isRegister; _error = ''; }),
                   child: Text(
                     _isRegister ? 'Already have an account? Sign in' : 'Don\'t have an account? Register',
-                    style: TextStyle(color: AppTheme.text400, fontSize: 13),
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                 ),
               ],
