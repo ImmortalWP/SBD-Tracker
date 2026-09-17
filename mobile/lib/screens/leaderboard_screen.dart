@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,16 +27,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     _loadData();
   }
 
-  Future<void> _loadUsername() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('sbd_token');
-    if (token != null) {
-      try {
-        final parts = token.split('.');
-        final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
-        setState(() => _myUsername = payload['username']);
-      } catch (_) {}
-    }
+  void _loadUsername() {
+    // Get username from AuthService (single source of truth) — no direct token access
+    final auth = context.read<AuthService>();
+    setState(() => _myUsername = auth.username);
   }
 
   Future<void> _loadCached() async {

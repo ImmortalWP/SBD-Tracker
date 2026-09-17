@@ -227,9 +227,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (confirmed == true) {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('sbd_token');
+      // Token is now in secure storage, not SharedPreferences
+      // Safe to clear all SharedPreferences without losing auth
       await prefs.clear();
-      if (token != null) await prefs.setString('sbd_token', token);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Local data cleared'),

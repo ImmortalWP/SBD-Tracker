@@ -4,6 +4,7 @@ const router = express.Router();
 const Workout = require('../models/Workout');
 const PersonalRecord = require('../models/PersonalRecord');
 const auth = require('../middleware/authMiddleware');
+const { validateNumber } = require('../middleware/validators');
 
 router.use(auth);
 
@@ -106,16 +107,17 @@ router.get('/overview', async (req, res) => {
       totalDuration,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /stats/overview error:', err);
+    res.status(500).json({ error: 'Failed to load stats overview.' });
   }
 });
 
 // GET /api/stats/muscle-map — muscle group training volume
 router.get('/muscle-map', async (req, res) => {
   try {
-    const { days = 7 } = req.query;
+    const days = validateNumber(req.query.days, { min: 1, max: 365, integer: true }) || 7;
     const since = new Date();
-    since.setDate(since.getDate() - Number(days));
+    since.setDate(since.getDate() - days);
 
     const workouts = await Workout.find({
       user: req.userId,
@@ -153,16 +155,18 @@ router.get('/muscle-map', async (req, res) => {
 
     res.json(muscleMap);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /stats/muscle-map error:', err);
+    res.status(500).json({ error: 'Failed to load muscle map.' });
   }
 });
 
 // GET /api/stats/prs — all personal records
 router.get('/prs', async (req, res) => {
   try {
+    // Ownership enforced in query
     const records = await PersonalRecord.find({ user: req.userId }).sort({ exerciseName: 1, reps: 1 });
     
-    // Group by exercise
+    // Group by exercise — return only necessary fields
     const grouped = {};
     records.forEach(r => {
       if (!grouped[r.exerciseName]) {
@@ -178,7 +182,8 @@ router.get('/prs', async (req, res) => {
 
     res.json(grouped);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /stats/prs error:', err);
+    res.status(500).json({ error: 'Failed to load personal records.' });
   }
 });
 
@@ -188,10 +193,14 @@ router.get('/volume', async (req, res) => {
     const userId = new mongoose.Types.ObjectId(req.userId);
     const { period = 'weekly' } = req.query;
 
+    // Validate period enum
+    const validPeriods = ['daily', 'weekly', 'monthly'];
+    const safePeriod = validPeriods.includes(period) ? period : 'weekly';
+
     let groupFormat;
-    if (period === 'daily') {
+    if (safePeriod === 'daily') {
       groupFormat = { $dateToString: { format: '%Y-%m-%d', date: '$date' } };
-    } else if (period === 'monthly') {
+    } else if (safePeriod === 'monthly') {
       groupFormat = { $dateToString: { format: '%Y-%m', date: '$date' } };
     } else {
       // weekly
@@ -219,7 +228,8 @@ router.get('/volume', async (req, res) => {
 
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /stats/volume error:', err);
+    res.status(500).json({ error: 'Failed to load volume data.' });
   }
 });
 

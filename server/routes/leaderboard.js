@@ -17,12 +17,14 @@ router.get('/', async (req, res) => {
 
     for (const user of users) {
       const entry = {
-        userId: user._id,
+        // Don't expose internal MongoDB ObjectId to other users
         username: user.username,
         Squat: 0,
         Bench: 0,
         Deadlift: 0,
         total: 0,
+        // Flag if this is the requesting user's entry
+        isCurrentUser: user._id.toString() === req.userId,
       };
 
       for (const lift of mainLifts) {
@@ -49,7 +51,8 @@ router.get('/', async (req, res) => {
 
     res.json(leaderboard);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /leaderboard error:', err);
+    res.status(500).json({ error: 'Failed to load leaderboard.' });
   }
 });
 

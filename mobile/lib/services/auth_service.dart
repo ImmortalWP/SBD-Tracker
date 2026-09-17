@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+import 'secure_token_storage.dart';
 
 class AuthService extends ChangeNotifier {
   String? _token;
@@ -18,8 +18,8 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> _loadToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString('sbd_token');
+    // Load token from secure storage (Android Keystore / iOS Keychain)
+    _token = await SecureTokenStorage.getToken();
     if (_token != null) {
       _parseToken();
     }
@@ -48,8 +48,10 @@ class AuthService extends ChangeNotifier {
     final data = await ApiService.login(username, password);
     _token = data['token'];
     _parseToken();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('sbd_token', _token!);
+    // Store token in secure storage (encrypted)
+    await SecureTokenStorage.setToken(_token!);
+    // Update ApiService cached token
+    ApiService.setCachedToken(_token);
     notifyListeners();
   }
 
@@ -57,16 +59,20 @@ class AuthService extends ChangeNotifier {
     final data = await ApiService.register(username, password);
     _token = data['token'];
     _parseToken();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('sbd_token', _token!);
+    // Store token in secure storage (encrypted)
+    await SecureTokenStorage.setToken(_token!);
+    // Update ApiService cached token
+    ApiService.setCachedToken(_token);
     notifyListeners();
   }
 
   Future<void> logout() async {
     _token = null;
     _username = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('sbd_token');
+    // Remove token from secure storage
+    await SecureTokenStorage.deleteToken();
+    // Clear ApiService cached token
+    ApiService.setCachedToken(null);
     notifyListeners();
   }
 }

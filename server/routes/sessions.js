@@ -3,16 +3,38 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const Session = require('../models/Session');
 const auth = require('../middleware/authMiddleware');
+const { escapeRegex, sanitizeString, pickFields, isValidObjectId, validateSessionInput } = require('../middleware/validators');
 
 // All routes require authentication
 router.use(auth);
+
+// Allowed fields for session create/update — prevents mass assignment
+const SESSION_ALLOWED_FIELDS = [
+  'clientId', 'block', 'week', 'percentage', 'day', 'date',
+  'duration', 'durationInMinutes', 'startTime', 'endTime',
+  'exercises', 'notes', 'note', 'intensity', 'sessionRating',
+];
 
 // GET /api/sessions — list all, with optional ?block= and ?day= filters
 router.get('/', async (req, res) => {
   try {
     const filter = { user: req.userId };
-    if (req.query.block) filter.block = Number(req.query.block);
-    if (req.query.day) filter.day = { $regex: req.query.day, $options: 'i' };
+
+    if (req.query.block) {
+      const block = Number(req.query.block);
+      if (!Number.isInteger(block) || block < 1 || block > 100) {
+        return res.status(400).json({ error: 'Invalid block number' });
+      }
+      filter.block = block;
+    }
+
+    if (req.query.day) {
+      // Escape regex to prevent ReDoS / regex injection
+      const safeDay = escapeRegex(sanitizeString(req.query.day, 50));
+      if (safeDay) {
+        filter.day = { $regex: safeDay, $options: 'i' };
+      }
+    }
 
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 100));
@@ -24,75 +46,118 @@ router.get('/', async (req, res) => {
     ]);
     res.json(sessions);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /sessions error:', err);
+    res.status(500).json({ error: 'Failed to load sessions.' });
   }
 });
 
 // GET /api/sessions/:id — single session
 router.get('/:id', async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+    // Ownership enforced: user can only access their own sessions
     const session = await Session.findOne({ _id: req.params.id, user: req.userId }).lean();
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /sessions/:id error:', err);
+    res.status(500).json({ error: 'Failed to load session.' });
   }
 });
 
 // POST /api/sessions — create (idempotent via clientId)
 router.post('/', async (req, res) => {
   try {
-    const { clientId, ...rest } = req.body;
+    // Whitelist allowed fields — prevent mass assignment
+    const data = pickFields(req.body, SESSION_ALLOWED_FIELDS);
+
+    // Validate input
+    const errors = validateSessionInput(data);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors.join('; ') });
+    }
+
+    const { clientId, ...rest } = data;
 
     // If clientId provided, check for duplicate first
     if (clientId) {
-      const existing = await Session.findOne({ user: req.userId, clientId }).lean();
+      const safeClientId = sanitizeString(clientId, 100);
+      const existing = await Session.findOne({ user: req.userId, clientId: safeClientId }).lean();
       if (existing) {
         return res.status(200).json(existing); // Idempotent — return existing
       }
+      rest.clientId = safeClientId;
     }
 
+    // Server sets ownership — never trust client-provided user ID
     const session = await Session.create({
       ...rest,
-      ...(clientId ? { clientId } : {}),
       user: req.userId,
     });
     res.status(201).json(session);
   } catch (err) {
     // Handle race condition: concurrent duplicate clientId insert
     if (err.code === 11000 && req.body.clientId) {
-      const existing = await Session.findOne({ user: req.userId, clientId: req.body.clientId }).lean();
-      if (existing) {
-        return res.status(200).json(existing);
-      }
+      try {
+        const existing = await Session.findOne({ user: req.userId, clientId: req.body.clientId }).lean();
+        if (existing) {
+          return res.status(200).json(existing);
+        }
+      } catch (_) { /* fall through */ }
     }
-    res.status(400).json({ error: err.message });
+    console.error('POST /sessions error:', err);
+    res.status(400).json({ error: 'Failed to create session.' });
   }
 });
 
 // PUT /api/sessions/:id — update
 router.put('/:id', async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+
+    // Whitelist allowed fields — prevent mass assignment of user, _id, etc.
+    const data = pickFields(req.body, SESSION_ALLOWED_FIELDS);
+
+    // Prevent overwriting ownership
+    delete data.user;
+
+    // Validate input
+    const errors = validateSessionInput(data);
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors.join('; ') });
+    }
+
+    // Ownership enforced in query
     const session = await Session.findOneAndUpdate(
       { _id: req.params.id, user: req.userId },
-      req.body,
+      data,
       { new: true, runValidators: true }
     );
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error('PUT /sessions/:id error:', err);
+    res.status(400).json({ error: 'Failed to update session.' });
   }
 });
 
 // DELETE /api/sessions/:id
 router.delete('/:id', async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+    // Ownership enforced in query
     const session = await Session.findOneAndDelete({ _id: req.params.id, user: req.userId });
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json({ message: 'Session deleted' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('DELETE /sessions/:id error:', err);
+    res.status(500).json({ error: 'Failed to delete session.' });
   }
 });
 
@@ -133,7 +198,8 @@ router.get('/stats/prs', async (req, res) => {
 
     res.json(prs);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /sessions/stats/prs error:', err);
+    res.status(500).json({ error: 'Failed to load personal records.' });
   }
 });
 
@@ -192,7 +258,8 @@ router.get('/stats/analytics', async (req, res) => {
 
     res.json({ totalSessions, totalBlocks: blocks.length, sessionsPerBlock, volume, volumeProgression });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('GET /sessions/stats/analytics error:', err);
+    res.status(500).json({ error: 'Failed to load analytics.' });
   }
 });
 

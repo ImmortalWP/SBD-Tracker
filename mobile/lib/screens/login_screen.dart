@@ -30,8 +30,8 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = 'Passwords do not match.');
       return;
     }
-    if (_isRegister && password.length < 6) {
-      setState(() => _error = 'Password must be at least 6 characters.');
+    if (_isRegister && password.length < 8) {
+      setState(() => _error = 'Password must be at least 8 characters.');
       return;
     }
 

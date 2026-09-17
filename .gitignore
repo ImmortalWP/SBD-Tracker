@@ -15,12 +15,13 @@ Thumbs.db
 node_modules/
 jspm_packages/
 
-# Local env files
+# Local env files — NEVER commit secrets
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.env.production
 
 # Log files
 npm-debug.log*
@@ -34,3 +35,18 @@ android-sdk/
 jdk/
 jdk17/
 ndk/
+
+# Build artifacts
+*.apk
+*.aab
+*.ipa
+!mobile/SBD-Tracker.apk
+mobile/build/
+mobile/.dart_tool/
+
+# Security: never commit these
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore

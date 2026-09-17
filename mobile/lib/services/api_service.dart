@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_token_storage.dart';
 
 class ApiService {
   static const String baseUrl = 'https://sbd-tracker.onrender.com/api';
@@ -9,11 +10,16 @@ class ApiService {
   static const Duration _writeTimeout = Duration(seconds: 60);
   static const int _maxRetries = 2;
 
+  // Non-sensitive cache still uses SharedPreferences
   static SharedPreferences? _prefs;
 
-  static Future<SharedPreferences> _getPrefs() async {
-    _prefs ??= await SharedPreferences.getInstance();
-    return _prefs!;
+  // Token cached in memory after loading from secure storage
+  // Never persisted in SharedPreferences
+  static String? _cachedToken;
+
+  /// Set the cached token (called by AuthService on login/logout)
+  static void setCachedToken(String? token) {
+    _cachedToken = token;
   }
 
   /// Wake the Render server by pinging /api/health.
@@ -80,7 +86,7 @@ class ApiService {
     }
   }
 
-  // Auth
+  // Auth — these don't need auth headers
   static Future<Map<String, dynamic>> login(String username, String password) async {
     final res = await _executeRead(() => http.post(
       Uri.parse('$baseUrl/auth/login'),
@@ -195,18 +201,19 @@ class ApiService {
     throw Exception('Failed to save PR');
   }
 
-  // Synchronous headers helper — for use inside _execute callbacks
-  // We cache _prefs so this is safe after first call
+  // Headers helper — uses in-memory cached token (loaded from secure storage)
+  // Never reads token from SharedPreferences
   static Map<String, String> _headersSync() {
-    final token = _prefs?.getString('sbd_token');
     return {
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (_cachedToken != null) 'Authorization': 'Bearer $_cachedToken',
     };
   }
 
-  /// Call once at app startup to pre-load prefs
+  /// Call once at app startup to pre-load prefs and token from secure storage
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    // Load token from secure storage into memory cache
+    _cachedToken = await SecureTokenStorage.getToken();
   }
 }
