@@ -88,15 +88,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
 
   /// Map block number to a descriptive name using common powerlifting block naming
   String _blockName(int block) {
-    // Check if any session in this block has a meaningful name from the program
-    // For now, use standard powerlifting periodization naming
-    switch (block) {
-      case 1: return 'Hypertrophy';
-      case 2: return 'Strength';
-      case 3: return 'Peaking';
-      case 4: return 'Deload';
-      default: return 'Block $block';
-    }
+    return 'Block $block';
   }
 
   @override
