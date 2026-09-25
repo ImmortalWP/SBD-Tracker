@@ -128,44 +128,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text(
-          'Analytics',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-        ),
+        const Text('Analytics', style: AppTypography.h1),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
           decoration: BoxDecoration(
             color: AppColors.cardBg,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.borderColor),
+            borderRadius: BorderRadius.circular(Radii.sm),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<TimeRange>(
               value: _selectedRange,
               dropdownColor: AppColors.cardBg,
-              icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary, size: 16),
+              icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textMuted, size: 14),
               isDense: true,
-              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+              style: AppTypography.bodySmall,
               onChanged: (TimeRange? newValue) {
-                if (newValue != null) {
-                  setState(() => _selectedRange = newValue);
-                }
+                if (newValue != null) setState(() => _selectedRange = newValue);
               },
               items: [
                 TimeRange.days7, TimeRange.days30, TimeRange.thisBlock, TimeRange.thisMonth, TimeRange.thisYear
               ].map<DropdownMenuItem<TimeRange>>((TimeRange value) {
                 return DropdownMenuItem<TimeRange>(
                   value: value,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.calendar_today, size: 12, color: AppColors.textMuted),
-                        const SizedBox(width: 6),
-                        Text(value.label),
-                      ],
-                    ),
-                  ),
+                  child: Text(value.label),
                 );
               }).toList(),
             ),
@@ -176,46 +161,35 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _buildLiftSelector() {
-    final lifts = [
-      {'name': 'Squat', 'icon': Icons.sports_gymnastics},
-      {'name': 'Bench', 'icon': Icons.airline_seat_flat_angled},
-      {'name': 'Deadlift', 'icon': Icons.fitness_center},
-    ];
-
+    final lifts = ['Squat', 'Bench', 'Deadlift'];
     return Container(
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.md),
       ),
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       child: Row(
         children: lifts.map((lift) {
-          final isSelected = _selectedLift == lift['name'];
+          final isSelected = _selectedLift == lift;
           return Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _selectedLift = lift['name'] as String),
+              onTap: () => setState(() => _selectedLift = lift),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: Spacing.md),
                 decoration: BoxDecoration(
                   color: isSelected ? AppColors.accentBlue : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(Radii.sm),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(lift['icon'] as IconData, size: 16, color: isSelected ? Colors.white : AppColors.textMuted),
-                    const SizedBox(width: 8),
-                    Text(
-                      lift['name'] as String,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                        color: isSelected ? Colors.white : AppColors.textSecondary,
-                      ),
+                child: Center(
+                  child: Text(
+                    lift,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color: isSelected ? Colors.white : AppColors.textMuted,
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -251,8 +225,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -422,8 +395,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -506,8 +478,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -542,8 +513,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -592,8 +562,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -674,8 +643,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -799,8 +767,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -921,8 +888,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

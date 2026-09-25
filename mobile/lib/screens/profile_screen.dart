@@ -511,8 +511,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         children: [
@@ -590,8 +589,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 10),
       decoration: BoxDecoration(
         color: _cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         children: [
@@ -619,8 +617,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -710,8 +707,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: _cardColor,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.borderColor),
+              borderRadius: BorderRadius.circular(Radii.lg),
             ),
             child: const Center(
               child: Text(
@@ -725,8 +721,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: _cardColor,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.borderColor),
+              borderRadius: BorderRadius.circular(Radii.lg),
             ),
             child: ListView.separated(
               shrinkWrap: true,
@@ -789,8 +784,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -912,8 +906,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Container(
           decoration: BoxDecoration(
             color: _cardColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.borderColor),
+            borderRadius: BorderRadius.circular(Radii.lg),
           ),
           child: Column(
             children: [

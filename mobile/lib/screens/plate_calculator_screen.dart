@@ -253,8 +253,7 @@ class _PlateCalculatorScreenState extends State<PlateCalculatorScreen> with Sing
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: AppColors.cardBg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.borderColor),
+            borderRadius: BorderRadius.circular(Radii.lg),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,8 +286,7 @@ class _PlateCalculatorScreenState extends State<PlateCalculatorScreen> with Sing
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: AppColors.cardBg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.borderColor),
+            borderRadius: BorderRadius.circular(Radii.lg),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -326,8 +324,7 @@ class _PlateCalculatorScreenState extends State<PlateCalculatorScreen> with Sing
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -396,8 +393,7 @@ class _PlateCalculatorScreenState extends State<PlateCalculatorScreen> with Sing
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: AppColors.cardBg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.borderColor),
+            borderRadius: BorderRadius.circular(Radii.lg),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

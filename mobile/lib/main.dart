@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'theme/app_colors.dart';
 import 'services/auth_service.dart';
@@ -12,6 +13,14 @@ import 'screens/dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Set system UI overlay style for immersive dark theme
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: AppColors.bg,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
 
   // Initialize local database (Hive)
   await LocalDB.init();
@@ -55,13 +64,14 @@ class SBDApp extends StatelessWidget {
           backgroundColor: Colors.transparent,
           elevation: 0,
           centerTitle: false,
+          scrolledUnderElevation: 0,
           titleTextStyle: TextStyle(
             fontFamily: 'Inter',
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w700,
             fontSize: 20,
             color: AppColors.textPrimary,
           ),
-          iconTheme: IconThemeData(color: AppColors.textSecondary),
+          iconTheme: IconThemeData(color: AppColors.textSecondary, size: 20),
         ),
         bottomNavigationBarTheme: const BottomNavigationBarThemeData(
           backgroundColor: AppColors.bg,
@@ -75,18 +85,18 @@ class SBDApp extends StatelessWidget {
           filled: true,
           fillColor: AppColors.inputBg,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(Radii.md),
             borderSide: const BorderSide(color: AppColors.borderColor),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(Radii.md),
             borderSide: const BorderSide(color: AppColors.borderColor),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(Radii.md),
             borderSide: BorderSide(color: AppColors.accentBlue.withValues(alpha: 0.6)),
           ),
-          labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+          labelStyle: AppTypography.label,
           hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         ),
@@ -95,19 +105,27 @@ class SBDApp extends StatelessWidget {
             backgroundColor: AppColors.accentBlue,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            elevation: 0,
           ),
         ),
         cardTheme: CardThemeData(
           color: AppColors.cardBg,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: AppColors.borderColor),
+            borderRadius: BorderRadius.circular(Radii.lg),
+            side: const BorderSide(color: AppColors.borderColor, width: 0.5),
           ),
           margin: EdgeInsets.zero,
         ),
+        dividerTheme: const DividerThemeData(
+          color: AppColors.borderColor,
+          thickness: 0.5,
+          space: 0,
+        ),
+        splashColor: AppColors.accentBlue.withValues(alpha: 0.08),
+        highlightColor: AppColors.accentBlue.withValues(alpha: 0.04),
       ),
       debugShowCheckedModeBanner: false,
       home: Consumer<AuthService>(
@@ -116,7 +134,7 @@ class SBDApp extends StatelessWidget {
             return const Scaffold(
               backgroundColor: AppColors.bg,
               body: Center(
-                child: CircularProgressIndicator(color: AppColors.accentBlue),
+                child: CircularProgressIndicator(color: AppColors.accentBlue, strokeWidth: 2),
               ),
             );
           }
@@ -126,4 +144,3 @@ class SBDApp extends StatelessWidget {
     );
   }
 }
-

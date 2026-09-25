@@ -866,8 +866,7 @@ class _AddSessionScreenState extends State<AddSessionScreen> with WidgetsBinding
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
         decoration: BoxDecoration(
           color: AppColors.inputBg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderColor),
+          borderRadius: BorderRadius.circular(Radii.md),
         ),
         child: Column(
           children: [

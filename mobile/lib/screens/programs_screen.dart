@@ -163,8 +163,7 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
       padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.lg),
       ),
       child: const Column(
         children: [
@@ -450,8 +449,7 @@ class _ProgramDetailScreen extends StatelessWidget {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: AppColors.cardBg,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.borderColor),
+                borderRadius: BorderRadius.circular(Radii.md),
               ),
               child: const Center(
                 child: Text('No schedule defined yet.', style: TextStyle(color: AppColors.textSecondary)),

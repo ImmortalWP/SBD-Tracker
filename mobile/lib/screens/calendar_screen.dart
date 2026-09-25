@@ -3,10 +3,8 @@ import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 
-/// Training calendar showing session history on a monthly grid.
 class TrainingCalendarScreen extends StatefulWidget {
   const TrainingCalendarScreen({super.key});
-
   @override
   State<TrainingCalendarScreen> createState() => _TrainingCalendarScreenState();
 }
@@ -15,13 +13,10 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
   DateTime _currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
   List<dynamic> _sessions = [];
   bool _loading = true;
-  Map<String, dynamic>? _selectedDaySession;
+  String? _selectedKey;
 
   @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
+  void initState() { super.initState(); _loadData(); }
 
   Future<void> _loadData() async {
     try {
@@ -35,28 +30,12 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
   Map<String, List<dynamic>> get _sessionsByDate {
     final map = <String, List<dynamic>>{};
     for (final s in _sessions) {
-      final dateStr = s['date']?.toString();
-      if (dateStr == null) continue;
-      final dt = DateTime.tryParse(dateStr);
+      final dt = DateTime.tryParse(s['date']?.toString() ?? '');
       if (dt == null) continue;
       final key = DateFormat('yyyy-MM-dd').format(dt);
       map.putIfAbsent(key, () => []).add(s);
     }
     return map;
-  }
-
-  void _prevMonth() {
-    setState(() {
-      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
-      _selectedDaySession = null;
-    });
-  }
-
-  void _nextMonth() {
-    setState(() {
-      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
-      _selectedDaySession = null;
-    });
   }
 
   @override
@@ -65,28 +44,27 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
       backgroundColor: AppColors.bg,
       appBar: AppBar(
         backgroundColor: AppColors.bg,
-        elevation: 0,
+        title: const Text('Calendar', style: AppTypography.h2),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: AppColors.textPrimary, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_rounded, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Calendar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppColors.accentBlue, strokeWidth: 2))
           : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+              padding: const EdgeInsets.fromLTRB(Spacing.lg, 0, Spacing.lg, 40),
               children: [
                 _buildMonthNav(),
-                const SizedBox(height: 12),
+                const SizedBox(height: Spacing.md),
                 _buildWeekdayHeaders(),
-                const SizedBox(height: 8),
+                const SizedBox(height: Spacing.sm),
                 _buildCalendarGrid(),
-                const SizedBox(height: 20),
+                const SizedBox(height: Spacing.xl),
                 _buildMonthStats(),
-                if (_selectedDaySession != null) ...[
-                  const SizedBox(height: 20),
-                  _buildSelectedSessionCard(),
+                if (_selectedKey != null) ...[
+                  const SizedBox(height: Spacing.base),
+                  _buildSelectedDetail(),
                 ],
               ],
             ),
@@ -97,29 +75,24 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        IconButton(
-          icon: const Icon(Icons.chevron_left, color: AppColors.textSecondary),
-          onPressed: _prevMonth,
+        GestureDetector(
+          onTap: () => setState(() { _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1); _selectedKey = null; }),
+          child: const Icon(Icons.chevron_left_rounded, color: AppColors.textSecondary, size: 28),
         ),
-        Text(
-          DateFormat('MMMM yyyy').format(_currentMonth),
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-        ),
-        IconButton(
-          icon: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
-          onPressed: _nextMonth,
+        Text(DateFormat('MMMM yyyy').format(_currentMonth), style: AppTypography.h3),
+        GestureDetector(
+          onTap: () => setState(() { _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1); _selectedKey = null; }),
+          child: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 28),
         ),
       ],
     );
   }
 
   Widget _buildWeekdayHeaders() {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     return Row(
       children: days.map((d) => Expanded(
-        child: Center(
-          child: Text(d, style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
-        ),
+        child: Center(child: Text(d, style: AppTypography.labelSmall)),
       )).toList(),
     );
   }
@@ -127,16 +100,13 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
   Widget _buildCalendarGrid() {
     final firstDay = DateTime(_currentMonth.year, _currentMonth.month, 1);
     final lastDay = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
-    final startWeekday = firstDay.weekday; // 1=Mon, 7=Sun
+    final startWeekday = firstDay.weekday;
     final daysInMonth = lastDay.day;
     final map = _sessionsByDate;
     final today = DateTime.now();
 
     final cells = <Widget>[];
-    // Leading empty cells
-    for (int i = 1; i < startWeekday; i++) {
-      cells.add(const SizedBox());
-    }
+    for (int i = 1; i < startWeekday; i++) cells.add(const SizedBox());
 
     for (int day = 1; day <= daysInMonth; day++) {
       final dt = DateTime(_currentMonth.year, _currentMonth.month, day);
@@ -144,21 +114,16 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
       final sessions = map[key] ?? [];
       final hasSession = sessions.isNotEmpty;
       final isToday = dt.year == today.year && dt.month == today.month && dt.day == today.day;
-      final isSelected = _selectedDaySession != null &&
-          _selectedDaySession!['date']?.toString().startsWith(key) == true;
+      final isSelected = _selectedKey == key;
 
       cells.add(GestureDetector(
-        onTap: hasSession ? () {
-          setState(() => _selectedDaySession = sessions.first);
-        } : null,
+        onTap: hasSession ? () => setState(() => _selectedKey = key) : null,
         child: Container(
           margin: const EdgeInsets.all(2),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.accentBlueBg
-                : hasSession ? AppColors.accentGreen.withValues(alpha: 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isToday ? Border.all(color: AppColors.accentBlue, width: 1.5) : null,
+            color: isSelected ? AppColors.accentBlueBg : Colors.transparent,
+            borderRadius: BorderRadius.circular(Radii.sm),
+            border: isToday ? Border.all(color: AppColors.accentBlue, width: 1) : null,
           ),
           child: Center(
             child: Column(
@@ -168,18 +133,15 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
                   '$day',
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: hasSession ? FontWeight.w700 : FontWeight.w400,
+                    fontWeight: hasSession ? FontWeight.w600 : FontWeight.w400,
                     color: hasSession ? AppColors.textPrimary : AppColors.textMuted,
                   ),
                 ),
                 if (hasSession)
                   Container(
                     margin: const EdgeInsets.only(top: 2),
-                    width: 5, height: 5,
-                    decoration: BoxDecoration(
-                      color: sessions.length > 1 ? AppColors.accentAmber : AppColors.accentGreen,
-                      shape: BoxShape.circle,
-                    ),
+                    width: 4, height: 4,
+                    decoration: const BoxDecoration(color: AppColors.accentGreen, shape: BoxShape.circle),
                   ),
               ],
             ),
@@ -189,8 +151,7 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
     }
 
     return GridView.count(
-      crossAxisCount: 7,
-      shrinkWrap: true,
+      crossAxisCount: 7, shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       childAspectRatio: 1,
       children: cells,
@@ -204,96 +165,77 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
 
     for (final entry in map.entries) {
       final dt = DateTime.tryParse(entry.key);
-      if (dt == null) continue;
-      if (dt.year == _currentMonth.year && dt.month == _currentMonth.month) {
-        for (final s in entry.value) {
-          monthSessions++;
-          final exercises = s['exercises'] as List? ?? [];
-          for (final ex in exercises) {
-            final sets = ex['sets'] as List? ?? [];
-            for (final set in sets) {
-              final w = (set['weight'] as num?)?.toDouble() ?? 0;
-              final r = (set['reps'] as num?)?.toInt() ?? 0;
-              monthVolume += w * r;
-            }
+      if (dt == null || dt.year != _currentMonth.year || dt.month != _currentMonth.month) continue;
+      for (final s in entry.value) {
+        monthSessions++;
+        for (final ex in (s['exercises'] as List? ?? [])) {
+          for (final set in (ex['sets'] as List? ?? [])) {
+            monthVolume += ((set['weight'] as num?)?.toDouble() ?? 0) * ((set['reps'] as num?)?.toInt() ?? 0);
           }
         }
       }
     }
 
+    return Row(
+      children: [
+        Expanded(child: _buildMonthStat('$monthSessions', 'Sessions', AppColors.accentBlueLight)),
+        const SizedBox(width: Spacing.md),
+        Expanded(child: _buildMonthStat('${(monthVolume / 1000).toStringAsFixed(1)}t', 'Volume', AppColors.accentGreen)),
+      ],
+    );
+  }
+
+  Widget _buildMonthStat(String value, String label, Color color) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.base),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderColor),
+        borderRadius: BorderRadius.circular(Radii.md),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: Column(
-              children: [
-                Text('$monthSessions', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.accentBlueLight)),
-                const Text('Sessions', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
-              ],
-            ),
-          ),
-          Container(width: 1, height: 40, color: AppColors.borderColor),
-          Expanded(
-            child: Column(
-              children: [
-                Text('${(monthVolume / 1000).toStringAsFixed(1)}t', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.accentGreen)),
-                const Text('Volume', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
-              ],
-            ),
-          ),
+          Text(value, style: AppTypography.monoLarge.copyWith(color: color)),
+          const SizedBox(height: 2),
+          Text(label, style: AppTypography.labelSmall),
         ],
       ),
     );
   }
 
-  Widget _buildSelectedSessionCard() {
-    final session = _selectedDaySession!;
-    final date = DateTime.tryParse(session['date']?.toString() ?? '');
-    final dateStr = date != null ? DateFormat('EEEE, MMM d').format(date) : '';
+  Widget _buildSelectedDetail() {
+    final map = _sessionsByDate;
+    final sessions = map[_selectedKey] ?? [];
+    if (sessions.isEmpty) return const SizedBox();
+    final session = sessions.first;
     final exercises = session['exercises'] as List? ?? [];
-    final day = session['day']?.toString() ?? '';
+    final dt = DateTime.tryParse(_selectedKey ?? '');
+    final dateStr = dt != null ? DateFormat('EEEE, MMM d').format(dt) : '';
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(Spacing.base),
       decoration: BoxDecoration(
-        color: AppColors.accentBlueBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.accentBlue.withValues(alpha: 0.2)),
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(Radii.md),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(dateStr, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.accentBlueLight)),
-              if (day.isNotEmpty)
-                Text(day, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-            ],
-          ),
-          const SizedBox(height: 10),
+          Text(dateStr, style: AppTypography.bodyMedium.copyWith(color: AppColors.accentBlueLight)),
+          const SizedBox(height: Spacing.sm),
           ...exercises.take(5).map((ex) {
             final name = ex['name']?.toString() ?? '';
             final sets = ex['sets'] as List? ?? [];
             return Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: Spacing.xs),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('•  ', style: TextStyle(color: AppColors.textMuted)),
-                  Expanded(child: Text(name, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
-                  Text('${sets.length} sets', style: const TextStyle(fontSize: 12, color: AppColors.textMuted, fontFamily: 'monospace')),
+                  Text(name, style: AppTypography.bodySmall),
+                  Text('${sets.length} sets', style: AppTypography.labelSmall),
                 ],
               ),
             );
           }).toList(),
-          if (exercises.length > 5)
-            Text('+${exercises.length - 5} more', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
         ],
       ),
     );
