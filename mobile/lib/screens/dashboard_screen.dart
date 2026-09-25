@@ -14,6 +14,7 @@ import '../screens/sessions_screen.dart';
 import '../screens/analytics_screen.dart';
 import '../screens/profile_screen.dart';
 import '../services/analytics_processor.dart';
+import '../services/session_utils.dart';
 import '../theme/app_colors.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -587,68 +588,129 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (dt != null) formattedDate = DateFormat('MMM d').format(dt);
     }
 
-    // Duration
-    String dur = '';
-    final dMin = session['durationInMinutes'];
-    if (dMin != null) {
-      final m = int.tryParse(dMin.toString()) ?? 0;
-      if (m >= 60) {
-        dur = '${m ~/ 60}h ${m % 60}m';
-      } else if (m > 0) {
-        dur = '${m}m';
-      }
-    }
-
-    // Main lifts
-    final liftNames = exercises
-        .where((e) => (e['category'] ?? 'main') == 'main')
-        .map((e) => e['name']?.toString() ?? '')
-        .where((n) => n.isNotEmpty)
-        .take(3)
-        .toList();
+    // Duration from SessionUtils
+    final dur = SessionUtils.getSessionDuration(session);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('LAST ${todayDay.toUpperCase()}', style: AppTypography.sectionHeader),
-            GestureDetector(
-              onTap: () { setState(() { _navIndex = 1; _visitedTabs.add(1); }); },
-              child: Text('View all →', style: AppTypography.bodySmall.copyWith(color: AppColors.accentBlueLight)),
-            ),
-          ],
+        Text('LAST ${todayDay.toUpperCase()}', style: AppTypography.sectionHeader),
+        const SizedBox(height: Spacing.sm),
+        // Date + duration subtitle
+        Text(
+          '${formattedDate.isNotEmpty ? formattedDate : todayDay}${dur.isNotEmpty && dur != '— min' ? ' • $dur' : ''}',
+          style: AppTypography.bodySmall,
         ),
         const SizedBox(height: Spacing.md),
+        // Exercise details card
         Container(
           padding: const EdgeInsets.all(Spacing.base),
           decoration: BoxDecoration(
             color: AppColors.cardBg,
             borderRadius: BorderRadius.circular(Radii.md),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (formattedDate.isNotEmpty)
-                      Text(formattedDate, style: AppTypography.bodySmall),
-                    const SizedBox(height: Spacing.xs),
-                    Text(
-                      liftNames.isNotEmpty ? liftNames.join(' + ') : 'Training',
-                      style: AppTypography.h3,
-                    ),
-                  ],
+              // Show each exercise with actual sets
+              ...exercises.map((ex) => _buildLastSessionExercise(ex)).toList(),
+              // View full session button
+              const SizedBox(height: Spacing.md),
+              GestureDetector(
+                onTap: () { setState(() { _navIndex = 1; _visitedTabs.add(1); }); },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: Spacing.md),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfacePrimary,
+                    borderRadius: BorderRadius.circular(Radii.sm),
+                  ),
+                  child: Center(
+                    child: Text('View Full Session →', style: AppTypography.bodySmall.copyWith(color: AppColors.accentBlueLight, fontWeight: FontWeight.w500)),
+                  ),
                 ),
               ),
-              if (dur.isNotEmpty)
-                Text(dur, style: AppTypography.mono.copyWith(color: AppColors.textMuted)),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  /// Build a compact exercise detail row for the last session preview.
+  /// Groups identical consecutive sets together (e.g. 160 × 5 × 3).
+  Widget _buildLastSessionExercise(dynamic ex) {
+    final name = (ex['name']?.toString() ?? 'Unknown').toUpperCase();
+    final setsList = ex['sets'] as List? ?? [];
+    if (setsList.isEmpty) return const SizedBox.shrink();
+
+    // Group consecutive identical sets
+    final groupedSets = <Map<String, dynamic>>[];
+    for (final s in setsList) {
+      final w = double.tryParse(s['weight']?.toString() ?? '0') ?? 0;
+      final r = int.tryParse(s['reps']?.toString() ?? '0') ?? 0;
+      final c = int.tryParse(s['sets']?.toString() ?? '1') ?? 1;
+      final pct = s['percentage'];
+
+      if (groupedSets.isNotEmpty) {
+        final last = groupedSets.last;
+        if (last['weight'] == w && last['reps'] == r && last['pct'] == pct) {
+          last['count'] = (last['count'] as int) + c;
+          continue;
+        }
+      }
+      groupedSets.add({'weight': w, 'reps': r, 'count': c, 'pct': pct});
+    }
+
+    // Exercise-level percentage (from the exercise object, not set-level)
+    final exPct = ex['percentage'];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(name, style: AppTypography.label.copyWith(color: AppColors.textSecondary, letterSpacing: 0.5)),
+          const SizedBox(height: Spacing.xs),
+          ...groupedSets.map((g) {
+            final w = (g['weight'] as double);
+            final r = g['reps'] as int;
+            final count = g['count'] as int;
+            final pct = g['pct'];
+
+            final weightStr = w.toString().replaceAll('.0', '');
+            String display = count > 1 ? '$weightStr × $r × $count' : '$weightStr × $r';
+
+            // Show percentage if available (set-level or exercise-level)
+            String? pctStr;
+            if (pct != null) {
+              final pctNum = double.tryParse(pct.toString());
+              if (pctNum != null && pctNum > 0) pctStr = '${pctNum.toStringAsFixed(0)}%';
+            } else if (exPct != null && _prs.isNotEmpty) {
+              // Try to calculate percentage from PR data for main lifts
+              final liftName = ex['name']?.toString() ?? '';
+              final pr = _prs[liftName];
+              if (pr != null && pr is num && pr > 0 && w > 0) {
+                final calcPct = (w / pr * 100).round();
+                if (calcPct > 0 && calcPct <= 120) pctStr = '~$calcPct%';
+              }
+            }
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                children: [
+                  Text(display, style: AppTypography.mono.copyWith(fontSize: 14, color: AppColors.textPrimary)),
+                  if (pctStr != null) ...[
+                    const SizedBox(width: Spacing.sm),
+                    Text('— $pctStr', style: AppTypography.bodySmall.copyWith(color: AppColors.textMuted, fontSize: 12)),
+                  ],
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      ),
     );
   }
 

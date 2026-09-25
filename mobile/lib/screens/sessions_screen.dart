@@ -21,23 +21,49 @@ class SessionsScreen extends StatefulWidget {
 }
 
 class _SessionsScreenState extends State<SessionsScreen> {
-  final Set<int> _expandedIndices = {0};
+  // ─── Filter State ───
+  int? _selectedBlock;
+  int? _selectedWeek;
+  String? _selectedDay;
   String _exerciseSearch = '';
-  DateTimeRange? _dateRange;
+  final Set<String> _collapsedBlocks = {};
+  final Set<String> _collapsedWeeks = {};
+  final Set<int> _expandedSessions = {0}; // First session auto-expanded
+
+  // ─── Dynamic filter options from real data ───
+  List<int> get _availableBlocks {
+    final blocks = widget.sessions.map((s) => s['block'] as int? ?? 1).toSet().toList();
+    blocks.sort((a, b) => b.compareTo(a)); // newest first
+    return blocks;
+  }
+
+  List<int> get _availableWeeks {
+    var sessions = widget.sessions.toList();
+    if (_selectedBlock != null) {
+      sessions = sessions.where((s) => s['block'] == _selectedBlock).toList();
+    }
+    final weeks = sessions.map((s) => s['week'] as int? ?? 1).toSet().toList();
+    weeks.sort((a, b) => b.compareTo(a));
+    return weeks;
+  }
+
+  List<String> get _availableDays {
+    var sessions = widget.sessions.toList();
+    if (_selectedBlock != null) sessions = sessions.where((s) => s['block'] == _selectedBlock).toList();
+    if (_selectedWeek != null) sessions = sessions.where((s) => s['week'] == _selectedWeek).toList();
+    final dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final days = sessions.map((s) => s['day']?.toString() ?? '').where((d) => d.isNotEmpty).toSet().toList();
+    days.sort((a, b) => dayOrder.indexOf(a).compareTo(dayOrder.indexOf(b)));
+    return days;
+  }
+
+  bool get _hasActiveFilters => _selectedBlock != null || _selectedWeek != null || _selectedDay != null || _exerciseSearch.isNotEmpty;
 
   List<dynamic> get _filteredSessions {
     return widget.sessions.where((session) {
-      // Date range filter
-      if (_dateRange != null) {
-        final dateStr = session['date']?.toString();
-        if (dateStr != null) {
-          final dt = DateTime.tryParse(dateStr);
-          if (dt != null) {
-            if (dt.isBefore(_dateRange!.start) || dt.isAfter(_dateRange!.end.add(const Duration(days: 1)))) return false;
-          }
-        }
-      }
-      // Exercise name filter
+      if (_selectedBlock != null && session['block'] != _selectedBlock) return false;
+      if (_selectedWeek != null && session['week'] != _selectedWeek) return false;
+      if (_selectedDay != null && session['day'] != _selectedDay) return false;
       if (_exerciseSearch.isNotEmpty) {
         final exercises = session['exercises'] as List? ?? [];
         final query = _exerciseSearch.toLowerCase();
@@ -51,6 +77,28 @@ class _SessionsScreenState extends State<SessionsScreen> {
     }).toList();
   }
 
+  void _clearFilters() {
+    setState(() {
+      _selectedBlock = null;
+      _selectedWeek = null;
+      _selectedDay = null;
+      _exerciseSearch = '';
+    });
+  }
+
+  /// Map block number to a descriptive name using common powerlifting block naming
+  String _blockName(int block) {
+    // Check if any session in this block has a meaningful name from the program
+    // For now, use standard powerlifting periodization naming
+    switch (block) {
+      case 1: return 'Hypertrophy';
+      case 2: return 'Strength';
+      case 3: return 'Peaking';
+      case 4: return 'Deload';
+      default: return 'Block $block';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredSessions;
@@ -59,7 +107,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // Header + Filters
           Padding(
             padding: const EdgeInsets.fromLTRB(Spacing.lg, Spacing.xl, Spacing.lg, 0),
             child: Column(
@@ -87,12 +135,6 @@ class _SessionsScreenState extends State<SessionsScreen> {
                       hintText: 'Search exercises...',
                       hintStyle: AppTypography.bodySmall.copyWith(color: AppColors.textMuted),
                       prefixIcon: const Icon(Icons.search, color: AppColors.textMuted, size: 18),
-                      suffixIcon: (_exerciseSearch.isNotEmpty || _dateRange != null)
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, color: AppColors.textMuted, size: 18),
-                              onPressed: () => setState(() { _exerciseSearch = ''; _dateRange = null; }),
-                            )
-                          : null,
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(vertical: 10),
                       isDense: true,
@@ -100,54 +142,19 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   ),
                 ),
                 const SizedBox(height: Spacing.sm),
-                // Date range chip
-                GestureDetector(
-                  onTap: () async {
-                    final picked = await showDateRangePicker(
-                      context: context,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime.now(),
-                      initialDateRange: _dateRange,
-                      builder: (ctx, child) => Theme(
-                        data: Theme.of(ctx).copyWith(
-                          colorScheme: const ColorScheme.dark(
-                            primary: AppColors.accentBlue,
-                            surface: AppColors.cardBg,
-                            onSurface: AppColors.textPrimary,
-                          ),
-                        ),
-                        child: child!,
-                      ),
-                    );
-                    if (picked != null) setState(() => _dateRange = picked);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
-                    decoration: BoxDecoration(
-                      color: _dateRange != null ? AppColors.accentBlueBg : AppColors.cardBg,
-                      borderRadius: BorderRadius.circular(Radii.sm),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.date_range, size: 14, color: _dateRange != null ? AppColors.accentBlueLight : AppColors.textMuted),
-                        const SizedBox(width: 6),
-                        Text(
-                          _dateRange != null
-                              ? '${DateFormat('MMM d').format(_dateRange!.start)} – ${DateFormat('MMM d').format(_dateRange!.end)}'
-                              : 'Date range',
-                          style: AppTypography.labelSmall.copyWith(
-                            color: _dateRange != null ? AppColors.accentBlueLight : AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
+                // Filter chips row
+                _buildFilterChips(),
+                if (_hasActiveFilters) ...[
+                  const SizedBox(height: Spacing.sm),
+                  GestureDetector(
+                    onTap: _clearFilters,
+                    child: Text('Clear filters', style: AppTypography.bodySmall.copyWith(color: AppColors.accentBlueLight)),
                   ),
-                ),
+                ],
               ],
             ),
           ),
-          const SizedBox(height: Spacing.base),
+          const SizedBox(height: Spacing.md),
           // Session list
           Expanded(
             child: RefreshIndicator(
@@ -165,20 +172,22 @@ class _SessionsScreenState extends State<SessionsScreen> {
                                 const Icon(Icons.inbox_rounded, size: 40, color: AppColors.textMuted),
                                 const SizedBox(height: Spacing.md),
                                 const Text('No sessions found', style: AppTypography.bodyMedium),
+                                if (_hasActiveFilters) ...[
+                                  const SizedBox(height: Spacing.sm),
+                                  GestureDetector(
+                                    onTap: _clearFilters,
+                                    child: Text('Clear filters', style: AppTypography.bodySmall.copyWith(color: AppColors.accentBlueLight)),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
                         ),
                       ],
                     )
-                  : ListView.builder(
+                  : ListView(
                       padding: const EdgeInsets.fromLTRB(Spacing.lg, 0, Spacing.lg, 100),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final session = filtered[index];
-                        final isExpanded = _expandedIndices.contains(index);
-                        return _buildSessionRow(index, session, isExpanded);
-                      },
+                      children: _buildGroupedList(filtered),
                     ),
             ),
           ),
@@ -187,9 +196,234 @@ class _SessionsScreenState extends State<SessionsScreen> {
     );
   }
 
+  // ─── Filter Chips ───
+
+  Widget _buildFilterChips() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _buildDropdownChip(
+            label: _selectedBlock != null ? _blockName(_selectedBlock!) : 'Block',
+            isActive: _selectedBlock != null,
+            options: _availableBlocks,
+            displayBuilder: (b) => _blockName(b),
+            onSelected: (b) => setState(() { _selectedBlock = b; _selectedWeek = null; _selectedDay = null; }),
+          ),
+          const SizedBox(width: Spacing.sm),
+          _buildDropdownChip(
+            label: _selectedWeek != null ? 'Week $_selectedWeek' : 'Week',
+            isActive: _selectedWeek != null,
+            options: _availableWeeks,
+            displayBuilder: (w) => 'Week $w',
+            onSelected: (w) => setState(() { _selectedWeek = w; _selectedDay = null; }),
+          ),
+          const SizedBox(width: Spacing.sm),
+          _buildStringDropdownChip(
+            label: _selectedDay ?? 'Day',
+            isActive: _selectedDay != null,
+            options: _availableDays,
+            onSelected: (d) => setState(() => _selectedDay = d),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDropdownChip<T>({
+    required String label,
+    required bool isActive,
+    required List<T> options,
+    required String Function(T) displayBuilder,
+    required Function(T?) onSelected,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        if (options.isEmpty) return;
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: AppColors.cardBg,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.lg))),
+          builder: (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(Spacing.base),
+                  child: Text(label, style: AppTypography.h3),
+                ),
+                if (isActive)
+                  ListTile(
+                    title: Text('Clear', style: AppTypography.bodyMedium.copyWith(color: AppColors.accentRed)),
+                    leading: const Icon(Icons.clear, color: AppColors.accentRed, size: 18),
+                    onTap: () { onSelected(null); Navigator.pop(ctx); },
+                  ),
+                ...options.map((o) => ListTile(
+                  title: Text(displayBuilder(o), style: AppTypography.body),
+                  onTap: () { onSelected(o); Navigator.pop(ctx); },
+                )).toList(),
+              ],
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
+        decoration: BoxDecoration(
+          color: isActive ? AppColors.accentBlueBg : AppColors.cardBg,
+          borderRadius: BorderRadius.circular(Radii.sm),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: AppTypography.labelSmall.copyWith(color: isActive ? AppColors.accentBlueLight : AppColors.textMuted)),
+            const SizedBox(width: 4),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: isActive ? AppColors.accentBlueLight : AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStringDropdownChip({
+    required String label,
+    required bool isActive,
+    required List<String> options,
+    required Function(String?) onSelected,
+  }) {
+    return _buildDropdownChip<String>(
+      label: label,
+      isActive: isActive,
+      options: options,
+      displayBuilder: (d) => d,
+      onSelected: onSelected,
+    );
+  }
+
+  // ─── Grouped Session List (Block → Week → Session) ───
+
+  List<Widget> _buildGroupedList(List<dynamic> sessions) {
+    // Group by block → week
+    final grouped = <int, Map<int, List<dynamic>>>{};
+    for (final s in sessions) {
+      final block = s['block'] as int? ?? 1;
+      final week = s['week'] as int? ?? 1;
+      grouped.putIfAbsent(block, () => {});
+      grouped[block]!.putIfAbsent(week, () => []);
+      grouped[block]![week]!.add(s);
+    }
+
+    // Sort blocks (newest first)
+    final sortedBlocks = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    final widgets = <Widget>[];
+    int globalIndex = 0;
+
+    for (final block in sortedBlocks) {
+      final blockKey = 'block_$block';
+      final isBlockCollapsed = _collapsedBlocks.contains(blockKey);
+
+      // Block header
+      widgets.add(
+        GestureDetector(
+          onTap: () => setState(() {
+            if (isBlockCollapsed) _collapsedBlocks.remove(blockKey);
+            else _collapsedBlocks.add(blockKey);
+          }),
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.only(top: Spacing.lg, bottom: Spacing.sm),
+            child: Row(
+              children: [
+                Icon(
+                  isBlockCollapsed ? Icons.chevron_right_rounded : Icons.expand_more_rounded,
+                  color: AppColors.accentBlueLight, size: 20,
+                ),
+                const SizedBox(width: Spacing.sm),
+                Text(
+                  _blockName(block).toUpperCase(),
+                  style: AppTypography.sectionHeader.copyWith(color: AppColors.accentBlueLight, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      if (isBlockCollapsed) {
+        // Count sessions in this block for the collapsed state
+        int blockSessionCount = 0;
+        for (final weekSessions in grouped[block]!.values) {
+          blockSessionCount += weekSessions.length;
+        }
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(left: Spacing.xl, bottom: Spacing.sm),
+            child: Text('$blockSessionCount sessions', style: AppTypography.bodySmall),
+          ),
+        );
+        // Count global index past all sessions in this block
+        for (final weekSessions in grouped[block]!.values) {
+          globalIndex += weekSessions.length;
+        }
+        continue;
+      }
+
+      // Sort weeks within block (newest first)
+      final sortedWeeks = grouped[block]!.keys.toList()..sort((a, b) => b.compareTo(a));
+
+      for (final week in sortedWeeks) {
+        final weekKey = 'block_${block}_week_$week';
+        final isWeekCollapsed = _collapsedWeeks.contains(weekKey);
+        final weekSessions = grouped[block]![week]!;
+
+        // Week header
+        widgets.add(
+          GestureDetector(
+            onTap: () => setState(() {
+              if (isWeekCollapsed) _collapsedWeeks.remove(weekKey);
+              else _collapsedWeeks.add(weekKey);
+            }),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.only(left: Spacing.lg, top: Spacing.md, bottom: Spacing.sm),
+              child: Row(
+                children: [
+                  Icon(
+                    isWeekCollapsed ? Icons.chevron_right_rounded : Icons.expand_more_rounded,
+                    color: AppColors.textSecondary, size: 18,
+                  ),
+                  const SizedBox(width: Spacing.xs),
+                  Text('WEEK $week', style: AppTypography.label.copyWith(fontSize: 12)),
+                  const SizedBox(width: Spacing.sm),
+                  Text('${weekSessions.length} session${weekSessions.length == 1 ? '' : 's'}', style: AppTypography.labelSmall),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        if (isWeekCollapsed) {
+          globalIndex += weekSessions.length;
+          continue;
+        }
+
+        // Sessions within the week
+        for (final session in weekSessions) {
+          final sessionIndex = globalIndex;
+          final isExpanded = _expandedSessions.contains(sessionIndex);
+          widgets.add(_buildSessionRow(sessionIndex, session, isExpanded));
+          globalIndex++;
+        }
+      }
+    }
+
+    return widgets;
+  }
+
   // ─── Session Row ───
 
-  Widget _buildSessionRow(int index, Map<String, dynamic> session, bool isExpanded) {
+  Widget _buildSessionRow(int index, dynamic session, bool isExpanded) {
     final dateStr = session['date']?.toString();
     String dayName = '';
     String dateFormatted = '';
@@ -200,7 +434,6 @@ class _SessionsScreenState extends State<SessionsScreen> {
         dateFormatted = DateFormat('MMM d').format(dt);
       }
     }
-    final weekStr = session['week']?.toString() ?? '';
     final exercises = session['exercises'] as List? ?? [];
     final dur = SessionUtils.getSessionDuration(session);
 
@@ -215,12 +448,12 @@ class _SessionsScreenState extends State<SessionsScreen> {
     return GestureDetector(
       onTap: () {
         setState(() {
-          if (isExpanded) { _expandedIndices.remove(index); }
-          else { _expandedIndices.add(index); }
+          if (isExpanded) _expandedSessions.remove(index);
+          else _expandedSessions.add(index);
         });
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: Spacing.sm),
+        margin: const EdgeInsets.only(bottom: Spacing.sm, left: Spacing.lg),
         padding: const EdgeInsets.all(Spacing.base),
         decoration: BoxDecoration(
           color: isExpanded ? AppColors.cardBg : Colors.transparent,
@@ -232,7 +465,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
             // Compact row
             Row(
               children: [
-                // Date column
+                // Day + date
                 SizedBox(
                   width: 56,
                   child: Column(
@@ -251,10 +484,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     children: [
                       Text(liftSummary, style: AppTypography.h3.copyWith(fontSize: 15)),
                       const SizedBox(height: 2),
-                      Text(
-                        '${weekStr.isNotEmpty ? 'W$weekStr • ' : ''}$dur',
-                        style: AppTypography.labelSmall,
-                      ),
+                      Text(dur, style: AppTypography.labelSmall),
                     ],
                   ),
                 ),
@@ -271,12 +501,9 @@ class _SessionsScreenState extends State<SessionsScreen> {
                 child: Container(height: 0.5, color: AppColors.borderColor),
               ),
               const SizedBox(height: Spacing.base),
-              // Summary stats
               _buildCompactStats(session),
               const SizedBox(height: Spacing.base),
-              // Exercises
               ...exercises.map((ex) => _buildExerciseDetail(ex)).toList(),
-              // Notes
               _buildNotes(session),
             ],
           ],
@@ -285,7 +512,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
     );
   }
 
-  Widget _buildCompactStats(Map<String, dynamic> session) {
+  Widget _buildCompactStats(dynamic session) {
     final vol = SessionUtils.getSessionVolume(session);
     final sets = SessionUtils.getSessionSets(session);
     final exercises = session['exercises'] as List? ?? [];
@@ -314,23 +541,53 @@ class _SessionsScreenState extends State<SessionsScreen> {
   Widget _buildExerciseDetail(dynamic ex) {
     final name = ex['name']?.toString() ?? 'Unknown';
     final setsList = ex['sets'] as List? ?? [];
+    final exPct = ex['percentage'];
+    final backoffPct = ex['backoffPercentage'];
 
     return Container(
       margin: const EdgeInsets.only(bottom: Spacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(name, style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+          Row(
+            children: [
+              Text(name, style: AppTypography.bodyMedium.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+              if (exPct != null) ...[
+                const SizedBox(width: Spacing.sm),
+                Text('— ${exPct}%', style: AppTypography.bodySmall.copyWith(color: AppColors.accentBlue, fontWeight: FontWeight.w600, fontSize: 12)),
+              ],
+              if (backoffPct != null) ...[
+                const SizedBox(width: Spacing.xs),
+                Text('(${backoffPct}% bo)', style: AppTypography.bodySmall.copyWith(color: AppColors.textMuted, fontSize: 11)),
+              ],
+            ],
+          ),
           const SizedBox(height: Spacing.sm),
           ...setsList.asMap().entries.map((entry) {
             final s = entry.value;
             final w = s['weight']?.toString() ?? '0';
             final r = s['reps']?.toString() ?? '0';
             final c = int.tryParse(s['sets']?.toString() ?? '1') ?? 1;
+            final pct = s['percentage'];
+
             final display = c > 1 ? '$w × $r × $c' : '$w × $r';
+            String? pctStr;
+            if (pct != null) {
+              final pctNum = double.tryParse(pct.toString());
+              if (pctNum != null && pctNum > 0) pctStr = '${pctNum.toStringAsFixed(0)}%';
+            }
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 3),
-              child: Text(display, style: AppTypography.mono.copyWith(fontSize: 13, color: AppColors.textSecondary)),
+              child: Row(
+                children: [
+                  Text(display, style: AppTypography.mono.copyWith(fontSize: 13, color: AppColors.textSecondary)),
+                  if (pctStr != null) ...[
+                    const SizedBox(width: Spacing.sm),
+                    Text('— $pctStr', style: AppTypography.bodySmall.copyWith(color: AppColors.textMuted, fontSize: 11)),
+                  ],
+                ],
+              ),
             );
           }).toList(),
           // Exercise note
@@ -347,7 +604,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
     );
   }
 
-  Widget _buildNotes(Map<String, dynamic> session) {
+  Widget _buildNotes(dynamic session) {
     final noteText = (session['note']?.toString().trim().isNotEmpty == true)
         ? session['note'].toString()
         : (session['notes']?.toString().trim().isNotEmpty == true)
