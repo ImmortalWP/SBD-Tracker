@@ -109,6 +109,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 const SizedBox(height: 24),
                 _buildVolumeChart(processor),
                 const SizedBox(height: 24),
+                _buildIntensityDistribution(),
+                const SizedBox(height: 24),
+                _buildFrequencyCard(),
+                const SizedBox(height: 24),
                 _buildTopLifts(processor),
                 const SizedBox(height: 24),
                 _buildInsights(processor),
@@ -752,6 +756,210 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             style: TextStyle(fontSize: 13, color: AppColors.textMuted),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildIntensityDistribution() {
+    // Categorize sets by intensity zone based on RPE or reps
+    int lightSets = 0;
+    int moderateSets = 0;
+    int heavySets = 0;
+    int maxEffortSets = 0;
+
+    for (final session in _sessions) {
+      final exercises = session['exercises'] as List? ?? [];
+      for (final ex in exercises) {
+        final sets = ex['sets'] as List? ?? [];
+        for (final set in sets) {
+          final reps = (set['reps'] as num?)?.toInt() ?? 0;
+          final rpe = (set['rpe'] as num?)?.toDouble();
+          if (reps <= 0) continue;
+
+          if (rpe != null) {
+            if (rpe >= 9.5) maxEffortSets++;
+            else if (rpe >= 8) heavySets++;
+            else if (rpe >= 6.5) moderateSets++;
+            else lightSets++;
+          } else {
+            // Estimate from reps
+            if (reps <= 2) maxEffortSets++;
+            else if (reps <= 5) heavySets++;
+            else if (reps <= 10) moderateSets++;
+            else lightSets++;
+          }
+        }
+      }
+    }
+
+    final total = lightSets + moderateSets + heavySets + maxEffortSets;
+    if (total == 0) return const SizedBox();
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('INTENSITY DISTRIBUTION', style: TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+          const SizedBox(height: 16),
+          _buildIntensityBar(total, lightSets, moderateSets, heavySets, maxEffortSets),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildIntensityLegend('Light', lightSets, total, AppColors.accentGreen),
+              _buildIntensityLegend('Moderate', moderateSets, total, AppColors.accentBlue),
+              _buildIntensityLegend('Heavy', heavySets, total, AppColors.accentAmber),
+              _buildIntensityLegend('Max', maxEffortSets, total, AppColors.accentRed),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIntensityBar(int total, int light, int moderate, int heavy, int max) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        height: 24,
+        child: Row(
+          children: [
+            if (light > 0) Expanded(flex: light, child: Container(color: AppColors.accentGreen)),
+            if (moderate > 0) Expanded(flex: moderate, child: Container(color: AppColors.accentBlue)),
+            if (heavy > 0) Expanded(flex: heavy, child: Container(color: AppColors.accentAmber)),
+            if (max > 0) Expanded(flex: max, child: Container(color: AppColors.accentRed)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIntensityLegend(String label, int count, int total, Color color) {
+    final pct = total > 0 ? (count / total * 100).round() : 0;
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            const SizedBox(width: 4),
+            Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text('$pct%', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
+      ],
+    );
+  }
+
+  Widget _buildFrequencyCard() {
+    if (_sessions.isEmpty) return const SizedBox();
+
+    // Sort sessions by date
+    final sorted = List<dynamic>.from(_sessions)
+      ..sort((a, b) {
+        final da = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime(2000);
+        final db = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(2000);
+        return da.compareTo(db);
+      });
+
+    // Calculate weekly frequency
+    final Map<String, int> weekCounts = {};
+    for (final s in sorted) {
+      final dt = DateTime.tryParse(s['date']?.toString() ?? '');
+      if (dt == null) continue;
+      // ISO week key
+      final weekStart = dt.subtract(Duration(days: dt.weekday - 1));
+      final key = DateFormat('yyyy-MM-dd').format(weekStart);
+      weekCounts[key] = (weekCounts[key] ?? 0) + 1;
+    }
+
+    final avgPerWeek = weekCounts.isNotEmpty
+        ? (weekCounts.values.reduce((a, b) => a + b) / weekCounts.length)
+        : 0.0;
+
+    // Calculate current streak (consecutive weeks with at least 1 session)
+    int streak = 0;
+    final now = DateTime.now();
+    var checkWeek = now.subtract(Duration(days: now.weekday - 1));
+    for (int i = 0; i < 52; i++) {
+      final key = DateFormat('yyyy-MM-dd').format(checkWeek);
+      if (weekCounts.containsKey(key)) {
+        streak++;
+        checkWeek = checkWeek.subtract(const Duration(days: 7));
+      } else {
+        break;
+      }
+    }
+
+    // Average gap between sessions (in days)
+    double avgGap = 0;
+    if (sorted.length > 1) {
+      int totalGap = 0;
+      int gaps = 0;
+      for (int i = 1; i < sorted.length; i++) {
+        final prev = DateTime.tryParse(sorted[i - 1]['date']?.toString() ?? '');
+        final curr = DateTime.tryParse(sorted[i]['date']?.toString() ?? '');
+        if (prev != null && curr != null) {
+          totalGap += curr.difference(prev).inDays;
+          gaps++;
+        }
+      }
+      if (gaps > 0) avgGap = totalGap / gaps;
+    }
+
+    // Best week
+    final bestWeekCount = weekCounts.isEmpty ? 0 : weekCounts.values.reduce((a, b) => a > b ? a : b);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('TRAINING CONSISTENCY', style: TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _buildFreqStat('Avg/Week', avgPerWeek.toStringAsFixed(1), AppColors.accentBlue),
+              const SizedBox(width: 16),
+              _buildFreqStat('Streak', '${streak}w', AppColors.accentGreen),
+              const SizedBox(width: 16),
+              _buildFreqStat('Avg Gap', '${avgGap.toStringAsFixed(1)}d', AppColors.accentAmber),
+              const SizedBox(width: 16),
+              _buildFreqStat('Best Week', '$bestWeekCount', AppColors.statPurple),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFreqStat(String label, String value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: color)),
+            const SizedBox(height: 2),
+            Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
+          ],
+        ),
       ),
     );
   }

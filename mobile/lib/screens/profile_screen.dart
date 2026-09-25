@@ -9,6 +9,9 @@ import '../services/auth_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_colors.dart';
 import 'plate_calculator_screen.dart';
+import 'bodyweight_screen.dart';
+import 'goals_screen.dart';
+import 'calendar_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -967,6 +970,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 title: 'Plate & Warm-up Calculator',
                 trailing: const Icon(Icons.chevron_right, color: _textDim, size: 18),
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlateCalculatorScreen())),
+              ),
+              _buildDivider(),
+              _buildSettingItem(
+                icon: Icons.monitor_weight_outlined,
+                title: 'Bodyweight Tracker',
+                trailing: const Icon(Icons.chevron_right, color: _textDim, size: 18),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BodyweightScreen())),
+              ),
+              _buildDivider(),
+              _buildSettingItem(
+                icon: Icons.flag_outlined,
+                title: 'Goals',
+                trailing: const Icon(Icons.chevron_right, color: _textDim, size: 18),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GoalsScreen())),
+              ),
+              _buildDivider(),
+              _buildSettingItem(
+                icon: Icons.calendar_month,
+                title: 'Training Calendar',
+                trailing: const Icon(Icons.chevron_right, color: _textDim, size: 18),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TrainingCalendarScreen())),
               ),
               _buildDivider(),
               _buildSettingItem(

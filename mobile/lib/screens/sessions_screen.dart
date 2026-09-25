@@ -28,12 +28,37 @@ class _SessionsScreenState extends State<SessionsScreen> {
   int? _selectedBlock;
   int? _selectedWeek;
   String? _selectedDay;
+  String _exerciseSearch = '';
+  DateTimeRange? _dateRange;
 
   List<dynamic> get _filteredSessions {
     return widget.sessions.where((session) {
       if (_selectedBlock != null && session['block'] != _selectedBlock) return false;
       if (_selectedWeek != null && session['week'] != _selectedWeek) return false;
       if (_selectedDay != null && session['day'] != _selectedDay) return false;
+      
+      // Date range filter
+      if (_dateRange != null) {
+        final dateStr = session['date']?.toString();
+        if (dateStr != null) {
+          final dt = DateTime.tryParse(dateStr);
+          if (dt != null) {
+            if (dt.isBefore(_dateRange!.start) || dt.isAfter(_dateRange!.end.add(const Duration(days: 1)))) return false;
+          }
+        }
+      }
+      
+      // Exercise name filter
+      if (_exerciseSearch.isNotEmpty) {
+        final exercises = session['exercises'] as List? ?? [];
+        final query = _exerciseSearch.toLowerCase();
+        final hasMatch = exercises.any((ex) {
+          final name = (ex['name']?.toString() ?? '').toLowerCase();
+          return name.contains(query);
+        });
+        if (!hasMatch) return false;
+      }
+      
       return true;
     }).toList();
   }
@@ -215,42 +240,112 @@ class _SessionsScreenState extends State<SessionsScreen> {
   }
 
   Widget _buildFiltersRow() {
+    final hasDateFilter = _dateRange != null;
+    final dateLabel = hasDateFilter
+        ? '${DateFormat('MMM d').format(_dateRange!.start)} - ${DateFormat('MMM d').format(_dateRange!.end)}'
+        : 'Date Range';
+    final hasAnyFilter = _selectedBlock != null || _selectedWeek != null || _selectedDay != null || _dateRange != null || _exerciseSearch.isNotEmpty;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            // Block dropdown
-            PopupMenuButton<int?>(
-              onSelected: (val) => setState(() => _selectedBlock = val),
+      child: Column(
+        children: [
+          // Exercise search
+          Container(
+            height: 40,
+            decoration: BoxDecoration(
               color: AppColors.cardBg,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              itemBuilder: (_) => [
-                PopupMenuItem<int?>(value: null, child: Text('All Blocks', style: TextStyle(color: _selectedBlock == null ? AppColors.accentBlueLight : AppColors.textPrimary))),
-                ..._availableBlocks.map((b) => PopupMenuItem<int?>(value: b, child: Text('Block $b', style: TextStyle(color: _selectedBlock == b ? AppColors.accentBlueLight : AppColors.textPrimary)))),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.borderColor),
+            ),
+            child: TextField(
+              onChanged: (v) => setState(() => _exerciseSearch = v),
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Search exercises...',
+                hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                prefixIcon: const Icon(Icons.search, color: AppColors.textMuted, size: 20),
+                suffixIcon: hasAnyFilter
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_all, color: AppColors.accentRed, size: 20),
+                        onPressed: () => setState(() {
+                          _selectedBlock = null;
+                          _selectedWeek = null;
+                          _selectedDay = null;
+                          _dateRange = null;
+                          _exerciseSearch = '';
+                        }),
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Filter chips row
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                // Block dropdown
+                PopupMenuButton<int?>(
+                  onSelected: (val) => setState(() => _selectedBlock = val),
+                  color: AppColors.cardBg,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  itemBuilder: (_) => [
+                    PopupMenuItem<int?>(value: null, child: Text('All Blocks', style: TextStyle(color: _selectedBlock == null ? AppColors.accentBlueLight : AppColors.textPrimary))),
+                    ..._availableBlocks.map((b) => PopupMenuItem<int?>(value: b, child: Text('Block $b', style: TextStyle(color: _selectedBlock == b ? AppColors.accentBlueLight : AppColors.textPrimary)))),
+                  ],
+                  child: _buildFilterBtn(Icons.grid_view, _selectedBlock != null ? 'Block $_selectedBlock' : 'Block', true, _selectedBlock != null),
+                ),
+                const SizedBox(width: 8),
+                // Week dropdown
+                PopupMenuButton<int?>(
+                  onSelected: (val) => setState(() => _selectedWeek = val),
+                  color: AppColors.cardBg,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  itemBuilder: (_) => [
+                    PopupMenuItem<int?>(value: null, child: Text('All Weeks', style: TextStyle(color: _selectedWeek == null ? AppColors.accentBlueLight : AppColors.textPrimary))),
+                    ..._availableWeeks.map((w) => PopupMenuItem<int?>(value: w, child: Text('Week $w', style: TextStyle(color: _selectedWeek == w ? AppColors.accentBlueLight : AppColors.textPrimary)))),
+                  ],
+                  child: _buildFilterBtn(Icons.calendar_month, _selectedWeek != null ? 'W$_selectedWeek' : 'Week', true, _selectedWeek != null),
+                ),
+                const SizedBox(width: 8),
+                // Day filter
+                GestureDetector(
+                  onTap: _showFilterSheet,
+                  child: _buildFilterBtn(Icons.today, _selectedDay ?? 'Day', false, _selectedDay != null),
+                ),
+                const SizedBox(width: 8),
+                // Date range picker
+                GestureDetector(
+                  onTap: () async {
+                    final picked = await showDateRangePicker(
+                      context: context,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                      initialDateRange: _dateRange,
+                      builder: (ctx, child) => Theme(
+                        data: Theme.of(ctx).copyWith(
+                          colorScheme: const ColorScheme.dark(
+                            primary: AppColors.accentBlue,
+                            surface: AppColors.cardBg,
+                            onSurface: AppColors.textPrimary,
+                          ),
+                        ),
+                        child: child!,
+                      ),
+                    );
+                    if (picked != null) setState(() => _dateRange = picked);
+                  },
+                  child: _buildFilterBtn(Icons.date_range, dateLabel, false, hasDateFilter),
+                ),
               ],
-              child: _buildFilterBtn(Icons.grid_view, _selectedBlock != null ? 'Block $_selectedBlock' : 'All Blocks', true, _selectedBlock != null),
             ),
-            const SizedBox(width: 12),
-            // Week dropdown
-            PopupMenuButton<int?>(
-              onSelected: (val) => setState(() => _selectedWeek = val),
-              color: AppColors.cardBg,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              itemBuilder: (_) => [
-                PopupMenuItem<int?>(value: null, child: Text('All Weeks', style: TextStyle(color: _selectedWeek == null ? AppColors.accentBlueLight : AppColors.textPrimary))),
-                ..._availableWeeks.map((w) => PopupMenuItem<int?>(value: w, child: Text('Week $w', style: TextStyle(color: _selectedWeek == w ? AppColors.accentBlueLight : AppColors.textPrimary)))),
-              ],
-              child: _buildFilterBtn(Icons.calendar_month, _selectedWeek != null ? 'Week $_selectedWeek' : 'All Weeks', true, _selectedWeek != null),
-            ),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: _showFilterSheet,
-              child: _buildFilterBtn(Icons.filter_alt_outlined, _selectedDay ?? 'Day', false, _selectedDay != null),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
