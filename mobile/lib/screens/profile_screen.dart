@@ -11,6 +11,7 @@ import '../theme/app_colors.dart';
 import 'plate_calculator_screen.dart';
 import 'bodyweight_screen.dart';
 import 'goals_screen.dart';
+import 'pdf_export_screen.dart';
 import 'calendar_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -1062,36 +1063,114 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showBackupExportDialog() {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Export Workout History', style: TextStyle(color: _textHighContrast, fontWeight: FontWeight.bold)),
-        content: const Text(
-          'Choose the format you would like to export your training logs. You can share or save it locally.',
-          style: TextStyle(color: _textMuted, fontSize: 13),
+      backgroundColor: _cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Backup & Export Data',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _textHighContrast),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Choose an export format for your training data.',
+              style: TextStyle(fontSize: 13, color: _textMuted),
+            ),
+            const SizedBox(height: 20),
+            // CSV Export
+            _buildExportOption(
+              icon: Icons.table_chart_outlined,
+              title: 'CSV Export',
+              subtitle: 'Raw structured data — spreadsheet-friendly',
+              onTap: () async {
+                Navigator.pop(ctx);
+                await ExportService.exportToCSV(_sessions);
+              },
+            ),
+            const SizedBox(height: 10),
+            // PDF Report
+            _buildExportOption(
+              icon: Icons.picture_as_pdf_outlined,
+              title: 'PDF Record',
+              subtitle: 'Professional training report with analytics',
+              isPrimary: true,
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PdfExportScreen(
+                      sessions: _sessions,
+                      profile: _profile,
+                      prs: _prs,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: _textMuted)),
+      ),
+    );
+  }
+
+  Widget _buildExportOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool isPrimary = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isPrimary ? _primaryAccent.withOpacity(0.08) : _bgColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isPrimary ? _primaryAccent.withOpacity(0.3) : AppColors.borderColor,
+            width: isPrimary ? 1.5 : 0.5,
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await ExportService.exportToCSV(_sessions);
-            },
-            child: const Text('CSV Format', style: TextStyle(color: _primaryAccent, fontWeight: FontWeight.bold)),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await ExportService.exportToPDF(_sessions, _prs);
-            },
-            child: const Text('PDF Report', style: TextStyle(color: _primaryAccent, fontWeight: FontWeight.bold)),
-          ),
-        ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isPrimary ? _primaryAccent.withOpacity(0.15) : _cardColor,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 20, color: isPrimary ? _primaryAccent : _textMuted),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isPrimary ? _primaryAccent : _textHighContrast,
+                  )),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: const TextStyle(fontSize: 11, color: _textDim)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: isPrimary ? _primaryAccent : _textDim),
+          ],
+        ),
       ),
     );
   }
